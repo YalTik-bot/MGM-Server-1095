@@ -17,6 +17,19 @@ const pool = new Pool({
   query_timeout: 5000,
 });
 pool.on('error', e => console.error('[db] pool error', e.message));
+
+// ── Discord bot (/MGM) ──
+let botClient = null;
+try {
+  const bot = require('./bot');
+  if (process.env.DISCORD_TOKEN) {
+    bot.start(pool).then(c => { botClient = c; console.log('[bot] started'); }).catch(e => console.error('[bot] failed to start:', e.message));
+  } else {
+    console.log('[bot] DISCORD_TOKEN not set — slash commands disabled');
+  }
+} catch (e) {
+  console.error('[bot] load failed:', e.message);
+}
 if (!process.env.DATABASE_URL) console.error('[db] DATABASE_URL not set - registrations will fail');
 
 pool.query(`
@@ -216,7 +229,7 @@ app.get('/export', async (req, res) => {
 app.get('/auth/debug', async (req, res) => {
   let dbOk = null;
   try { await pool.query('SELECT 1'); dbOk = true; } catch (e) { dbOk = e.code + ': ' + e.message.slice(0,120); }
-  res.json({ hasClientId: !!CLIENT_ID, clientId: CLIENT_ID || null, redirectUri: REDIRECT_URI || null, hasSecret: !!CLIENT_SECRET, guildId: GUILD_ID || null, nodeEnv: process.env.NODE_ENV || null, hasDatabaseUrl: !!process.env.DATABASE_URL, dbStatus: dbOk });
+  res.json({ hasClientId: !!CLIENT_ID, clientId: CLIENT_ID || null, redirectUri: REDIRECT_URI || null, hasSecret: !!CLIENT_SECRET, guildId: GUILD_ID || null, nodeEnv: process.env.NODE_ENV || null, hasDatabaseUrl: !!process.env.DATABASE_URL, dbStatus: dbOk, hasDiscordToken: !!process.env.DISCORD_TOKEN, mgmChannelId: process.env.MGM_CHANNEL_ID || process.env.MGM_LIST_CHANNEL_ID || null, botReady: !!(botClient && botClient.isReady && botClient.isReady()) });
 });
 
 if (!CLIENT_ID || !CLIENT_SECRET || !REDIRECT_URI || !GUILD_ID) console.error('[startup] Missing env:', { hasId: !!CLIENT_ID, hasSecret: !!CLIENT_SECRET, redirectUri: REDIRECT_URI, guildId: GUILD_ID });
