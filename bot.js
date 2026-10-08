@@ -22,7 +22,7 @@ function buildListEmbed(registrations, guildName, eventRow) {
   const trunc = (s, max = 1024) => s.length > max ? s.slice(0, max - 20).replace(/\n[^\n]*$/, '') + '\n… and more' : s;
   const ev = eventRow ? formatEventLine(eventRow.event_at) : null;
   const descEvent = ev
-    ? `📅 **Event:** <t:${ev.ts}:F> (<t:${ev.ts}:R>) — ${ev.utc}`
+    ? `📅 **Event:** ${ev.utc}`
     : `📅 **Event:** _Not set yet — set a date on the dashboard_`;
   const helpLine = `**How to register:** Type \`/mgm register\` → enter your in-game name, power and \`yes\`/\`no\` — or tap **Register / Edit** below. Then use **I'm Going ✅** / **Not Going ❌** to toggle. \`/mgm status\` shows your entry, \`/mgm list\` refreshes this board.\n**New event:** Anyone can create a fresh board with \`/mgm event when:2026-11-02 19:00 title:Murongs Grand Melee\` (UTC — leave \`when\` empty for TBA). Fresh list, everyone must re-register.`;
   const embed = new EmbedBuilder()
@@ -235,11 +235,21 @@ async function start(pool) {
           // B: create a NEW event (fresh participant list). Everyone can create.
           const { rows } = await pool.query('INSERT INTO mgm_events (title, event_at, created_by, updated_by) VALUES ($1,$2,$3,$3) RETURNING *', [title, eventAt, interaction.user.id]);
           const newId = rows[0].id;
+          const utcDesc = eventAt ? new Date(eventAt).toLocaleString('en-GB', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' }) + ' UTC' : 'TBA';
           await updateListChannel(client, pool);
-          const whenDesc = eventAt ? '<t:' + Math.floor(new Date(eventAt).getTime()/1000) + ':F> (<t:' + Math.floor(new Date(eventAt).getTime()/1000) + ':R>)' : '_TBA_';
+          // Ping Alliance members in the MGM channel (uses @Alliance members; if you have a role ID put it in ALLIANCE_ROLE_ID for a real ping)
+          const allianceMention = process.env.ALLIANCE_ROLE_ID ? `<@&${process.env.ALLIANCE_ROLE_ID}>` : '@Alliance members';
+          try {
+            if (LIST_CHANNEL_ID) {
+              const ch2 = await client.channels.fetch(LIST_CHANNEL_ID).catch(() => null);
+              if (ch2 && ch2.isTextBased()) {
+                await ch2.send({ content: `${allianceMention} — New MGM event **${title}** — ${utcDesc} — register with \`/mgm register\`!`, allowedMentions: { parse: ['roles', 'everyone', 'users'] } }).catch(() => {});
+              }
+            }
+          } catch {}
           const dashUrl = process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}/event/${newId}` : `/event/${newId}`;
           const chMention = LIST_CHANNEL_ID ? '<#' + LIST_CHANNEL_ID + '>' : 'the MGM channel';
-          return interaction.reply({ content: `✅ **New event #${newId}** created: **${title}** — ${whenDesc}.\nParticipants start empty — everyone must re-register with \`/mgm register\`. Dashboard: ${dashUrl} • Board refreshed in ${chMention}.` });
+          return interaction.reply({ content: `${allianceMention} ✅ **New event #${newId}** created: **${title}** — ${utcDesc}.\nParticipants start empty — everyone must re-register with \`/mgm register\`. Dashboard: ${dashUrl} • Board refreshed in ${chMention}.`, allowedMentions: { parse: ['roles', 'everyone', 'users'] } });
         }
 
         // register (default)

@@ -283,7 +283,23 @@ app.post('/api/events', requireAuth, async (req, res) => {
       [title, eventAt, req.session.user.id]
     );
     console.log(`[event] created ${rows[0].id} by ${req.session.user.id} -> ${eventAt} "${title}"`);
-    try { const bot = require('./bot'); if (bot.updateEventChannel) { const c = bot.getClient && bot.getClient(); if (c) await bot.updateEventChannel(c, pool); } } catch {}
+    const createdUtc = eventAt ? new Date(eventAt).toLocaleString('en-GB', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' }) + ' UTC' : 'TBA';
+    try {
+      const bot = require('./bot');
+      if (bot.updateEventChannel) { const c = bot.getClient && bot.getClient(); if (c) await bot.updateEventChannel(c, pool); }
+      // Ping Alliance members in MGM channel (website creation)
+      const allianceMention2 = process.env.ALLIANCE_ROLE_ID ? `<@&${process.env.ALLIANCE_ROLE_ID}>` : '@Alliance members';
+      const listId = process.env.MGM_CHANNEL_ID || process.env.MGM_LIST_CHANNEL_ID;
+      if (listId) {
+        const c2 = bot.getClient && bot.getClient();
+        if (c2) {
+          const ch2 = await c2.channels.fetch(listId).catch(() => null);
+          if (ch2 && ch2.isTextBased()) {
+            await ch2.send({ content: `${allianceMention2} — New MGM event **${title}** — ${createdUtc} — register with \`/mgm register\`!`, allowedMentions: { parse: ['roles', 'everyone', 'users'] } }).catch(() => {});
+          }
+        }
+      }
+    } catch {}
     res.json(rows[0]);
   } catch (e) { console.error('[event] create failed', e.message); res.status(500).json({ error: 'Database error' }); }
 });
