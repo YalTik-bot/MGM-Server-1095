@@ -1,4 +1,4 @@
-// MGM Discord Bot — /mgm register + lijst (list in één kanaal)
+// MGM Discord Bot — /mgm register + list (single dedicated channel)
 const {
   Client, GatewayIntentBits, Events, SlashCommandBuilder, REST, Routes,
   ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder,
@@ -10,37 +10,29 @@ const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const TOKEN = process.env.DISCORD_TOKEN;
 const LIST_CHANNEL_ID = process.env.MGM_CHANNEL_ID || process.env.MGM_LIST_CHANNEL_ID || null;
 
-function fmtPower(n) { return Number(n).toLocaleString('nl-BE'); }
+function fmtPower(n) { return Number(n).toLocaleString('en-US'); }
 
 function buildListEmbed(registrations, guildName) {
-  const yes = registrations.filter(r => r.participating);
-  const no = registrations.filter(r => !r.participating);
+  const going = registrations.filter(r => r.participating);
+  const notGoing = registrations.filter(r => !r.participating);
   const total = registrations.length;
-
   const line = r => `**${r.in_game_name}** — ${r.discord_username} — \`${fmtPower(r.power)}\``;
-
-  const yesText = yes.length ? yes.map(line).join('\n') : '_Niemand_';
-  const noText = no.length ? no.map(line).join('\n') : '_Niemand_';
-
-  // Discord embed field limit 1024 chars — truncate if needed
-  const trunc = (s, max = 1024) => s.length > max ? s.slice(0, max - 20).replace(/\n[^\n]*$/, '') + '\n… en meer' : s;
-
+  const goingText = going.length ? going.map(line).join('\n') : '_Nobody_';
+  const notGoingText = notGoing.length ? notGoing.map(line).join('\n') : '_Nobody_';
+  const trunc = (s, max = 1024) => s.length > max ? s.slice(0, max - 20).replace(/\n[^\n]*$/, '') + '\n… and more' : s;
   const embed = new EmbedBuilder()
     .setTitle('Murongs Grand Melee — Server 1095')
-    .setDescription(`Totaal geregistreerd: **${total}** — groen = doet mee, rood = niet`)
+    .setDescription(`Total registered: **${total}** — green = going, red = not going`)
     .setColor(0xf59e0b)
     .setTimestamp(new Date());
-
   if (guildName) embed.setFooter({ text: guildName });
-
   embed.addFields(
-    { name: `✅ Aanwezig — ${yes.length}`, value: trunc(yesText), inline: false },
-    { name: `❌ Niet aanwezig — ${no.length}`, value: trunc(noText), inline: false },
+    { name: `✅ Going — ${going.length}`, value: trunc(goingText), inline: false },
+    { name: `❌ Not Going — ${notGoing.length}`, value: trunc(notGoingText), inline: false },
   );
-  // Also a compact sorted table (top 25) as extra field if many entries
   if (total > 0) {
     const table = registrations.slice(0, 25).map((r, i) => `${String(i + 1).padStart(2, ' ')}. ${r.in_game_name.padEnd(16).slice(0, 16)}  ${fmtPower(r.power).padStart(10)}  ${r.participating ? '✅' : '❌'}`).join('\n');
-    embed.addFields({ name: '🏆 Top 25 op Power', value: '```\n' + trunc(table, 1000) + '\n```', inline: false });
+    embed.addFields({ name: '🏆 Top 25 by Power', value: '```\n' + trunc(table, 1000) + '\n```', inline: false });
   }
   return embed;
 }
@@ -48,10 +40,10 @@ function buildListEmbed(registrations, guildName) {
 function buildListComponents() {
   return [
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('mgm_join').setLabel('Ik doe mee ✅').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId('mgm_leave').setLabel('Ik doe niet mee ❌').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('mgm_register').setLabel('Registreren / Wijzigen').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('mgm_refresh').setLabel('🔄 Vernieuwen').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('mgm_join').setLabel("I'm Going ✅").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('mgm_leave').setLabel('Not Going ❌').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('mgm_register').setLabel('Register / Edit').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('mgm_refresh').setLabel('🔄 Refresh').setStyle(ButtonStyle.Secondary),
     )
   ];
 }
@@ -84,7 +76,7 @@ async function updateListChannel(client, pool) {
     const embed = buildListEmbed(regs, ch.guild?.name || null);
     const components = buildListComponents();
 
-    // Try to find and update last bot message in channel, else send new one
+    // Find and update the last bot message in the channel, else send a new one
     // Look for recent messages by this bot
     const msgs = await ch.messages.fetch({ limit: 20 }).catch(() => null);
     let target = null;
@@ -105,9 +97,9 @@ function buildMgmCommand() {
   return new SlashCommandBuilder()
     .setName('mgm')
     .setDescription('Murongs Grand Melee — Server 1095')
-    .addSubcommand(sc => sc.setName('register').setDescription('Registreren of wijzigen: naam + power + meedoen'))
-    .addSubcommand(sc => sc.setName('lijst').setDescription('Toon wie er meedoet en wie niet (post in MGM kanaal)'))
-    .addSubcommand(sc => sc.setName('status').setDescription('Toon jouw eigen registratie'))
+    .addSubcommand(sc => sc.setName('register').setDescription('Register or update: name + power + going'))
+    .addSubcommand(sc => sc.setName('list').setDescription('Show who is going and who is not (posts in MGM channel)'))
+    .addSubcommand(sc => sc.setName('status').setDescription('Show your own registration'))
     .toJSON();
 }
 
@@ -128,10 +120,10 @@ async function registerCommands() {
 }
 
 function buildRegisterModal() {
-  const modal = new ModalBuilder().setCustomId('mgm_modal').setTitle('MGM — Registreren');
-  const nameInput = new TextInputBuilder().setCustomId('in_game_name').setLabel('In-game naam').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(50).setPlaceholder('bv. YalTik');
-  const powerInput = new TextInputBuilder().setCustomId('power').setLabel('Power (cijfers, bv. 45000000)').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('45000000').setMaxLength(20);
-  const partInput = new TextInputBuilder().setCustomId('participating').setLabel('Meedoen? (ja / nee)').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('ja').setMaxLength(5);
+  const modal = new ModalBuilder().setCustomId('mgm_modal').setTitle('MGM — Register');
+  const nameInput = new TextInputBuilder().setCustomId('in_game_name').setLabel('In-game name').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(50).setPlaceholder('e.g. YalTik');
+  const powerInput = new TextInputBuilder().setCustomId('power').setLabel('Power (numbers, e.g. 45000000)').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('45000000').setMaxLength(20);
+  const partInput = new TextInputBuilder().setCustomId('participating').setLabel('Going? (yes / no)').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('yes').setMaxLength(5);
   modal.addComponents(
     new ActionRowBuilder().addComponents(nameInput),
     new ActionRowBuilder().addComponents(powerInput),
@@ -163,11 +155,11 @@ async function start(pool) {
 
         if (sub === 'status') {
           const row = (await pool.query('SELECT * FROM registrations WHERE discord_id=$1', [interaction.user.id])).rows[0];
-          if (!row) return interaction.reply({ content: 'Je bent nog niet geregistreerd. Gebruik `/mgm register` om je aan te melden.', ephemeral: true });
-          return interaction.reply({ content: `**${row.in_game_name}** — Power \`${fmtPower(row.power)}\` — ${row.participating ? '✅ Aanwezig' : '❌ Niet aanwezig'}`, ephemeral: true });
+          if (!row) return interaction.reply({ content: 'You are not registered yet. Use `/mgm register` to sign up.', ephemeral: true });
+          return interaction.reply({ content: `**${row.in_game_name}** — Power \`${fmtPower(row.power)}\` — ${row.participating ? '✅ Going' : '❌ Not Going'}`, ephemeral: true });
         }
 
-        if (sub === 'lijst') {
+        if (sub === 'list') {
           const regs = await fetchRegistrations(pool);
           const embed = buildListEmbed(regs, guildName);
           const components = buildListComponents();
@@ -175,7 +167,7 @@ async function start(pool) {
           if (LIST_CHANNEL_ID) {
             await updateListChannel(client, pool);
             const ch = await client.channels.fetch(LIST_CHANNEL_ID).catch(() => null);
-            return interaction.reply({ content: ch ? `Lijst ververst in <#${LIST_CHANNEL_ID}> — ${regs.length} registraties.` : `Lijst: ${regs.length} registraties.`, embeds: [embed], ephemeral: true });
+            return interaction.reply({ content: ch ? `List refreshed in <#${LIST_CHANNEL_ID}> — ${regs.length} registrations.` : `List: ${regs.length} registrations.`, embeds: [embed], ephemeral: true });
           }
           // Otherwise post publicly in current channel
           return interaction.reply({ embeds: [embed], components });
@@ -198,14 +190,14 @@ async function start(pool) {
         const participating = ['ja', 'yes', 'y', 'j', '1', 'true', 'aanwezig', 'mee'].includes(partRaw);
 
         if (!inGameName || !Number.isFinite(power) || power < 0) {
-          return interaction.editReply({ content: '❌ Vul een geldige in-game naam en power in (bv. 45000000).' });
+          return interaction.editReply({ content: '❌ Please enter a valid in-game name and power (e.g. 45000000).' });
         }
         const username = interaction.user.globalName || interaction.user.username;
         await upsertRegistration(pool, interaction.user.id, username, inGameName, power, participating);
-        console.log(`[bot] upsert ${interaction.user.id} ${username} -> ${inGameName} ${power} ${participating ? 'ja' : 'nee'}`);
+        console.log(`[bot] upsert ${interaction.user.id} ${username} -> ${inGameName} ${power} ${participating ? 'yes' : 'no'}`);
         await updateListChannel(client, pool);
-        const where = LIST_CHANNEL_ID ? `<#${LIST_CHANNEL_ID}>` : 'de lijst';
-        return interaction.editReply({ content: `✅ Geregistreerd als **${inGameName}** — Power \`${fmtPower(power)}\` — ${participating ? '✅ Aanwezig' : '❌ Niet aanwezig'}. Zichtbaar in ${where}.` });
+        const where = LIST_CHANNEL_ID ? `<#${LIST_CHANNEL_ID}>` : 'the list';
+        return interaction.editReply({ content: `✅ Registered as **${inGameName}** — Power \`${fmtPower(power)}\` — ${participating ? '✅ Going' : '❌ Not Going'}. Visible in ${where}.` });
       }
 
       // Buttons
@@ -223,7 +215,7 @@ async function start(pool) {
           const want = id === 'mgm_join';
           const row = (await pool.query('SELECT * FROM registrations WHERE discord_id=$1', [interaction.user.id])).rows[0];
           if (!row) {
-            return interaction.reply({ content: 'Je bent nog niet geregistreerd. Klik op **Registreren / Wijzigen** eerst.', ephemeral: true });
+            return interaction.reply({ content: 'You are not registered yet. Click **Register / Edit** first.', ephemeral: true });
           }
           await pool.query('UPDATE registrations SET participating=$1, updated_at=CURRENT_TIMESTAMP WHERE discord_id=$2', [want, interaction.user.id]);
           console.log(`[bot] ${interaction.user.id} toggle participating -> ${want}`);
@@ -233,16 +225,16 @@ async function start(pool) {
             const regs = await fetchRegistrations(pool);
             const embed = buildListEmbed(regs, interaction.guild?.name || null);
             if (interaction.message?.embeds?.length) await interaction.update({ embeds: [embed], components: buildListComponents() });
-            else await interaction.reply({ content: want ? '✅ Je staat nu op **Aanwezig**.' : '❌ Je staat nu op **Niet aanwezig**.', ephemeral: true });
+            else await interaction.reply({ content: want ? '✅ You are now marked as **Going**.' : '❌ You are now marked as **Not Going**.', ephemeral: true });
           } catch {
-            await interaction.reply({ content: want ? '✅ Aanwezig.' : '❌ Niet aanwezig.', ephemeral: true }).catch(() => {});
+            await interaction.reply({ content: want ? '✅ Going.' : '❌ Not Going.', ephemeral: true }).catch(() => {});
           }
           return;
         }
       }
     } catch (e) {
       console.error('[bot] interaction error:', e);
-      try { if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: 'Er ging iets mis. Probeer opnieuw.', ephemeral: true }); else await interaction.editReply({ content: 'Er ging iets mis.' }); } catch {}
+      try { if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: 'Something went wrong. Please try again.', ephemeral: true }); else await interaction.editReply({ content: 'Something went wrong.' }); } catch {}
     }
   });
 
