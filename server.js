@@ -43,6 +43,20 @@ pool.query(`
   )
 `).catch(err => console.error('DB init error:', err));
 
+pool.query(`
+  CREATE TABLE IF NOT EXISTS mgm_event (
+    id INT PRIMARY KEY,
+    title TEXT NOT NULL DEFAULT 'Murongs Grand Melee',
+    event_at TIMESTAMPTZ,
+    updated_by TEXT,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+  )
+`).then(() => pool.query(`INSERT INTO mgm_event (id, title) VALUES (1, 'Murongs Grand Melee') ON CONFLICT (id) DO NOTHING`)).catch(err => console.error('DB mgm_event init error:', err));
+
+async function getEvent() {
+  try { const { rows } = await pool.query('SELECT * FROM mgm_event WHERE id=1'); return rows[0] || { id: 1, title: 'Murongs Grand Melee', event_at: null }; } catch (e) { console.error('[db] getEvent failed', e.message); return { id: 1, title: 'Murongs Grand Melee', event_at: null }; }
+}
+
 app.set('trust proxy', 1); // Railway sits behind a proxy; required for secure cookies
 app.set('view engine', 'ejs');
 app.use(express.urlencoded({ extended: true }));
@@ -154,11 +168,51 @@ app.get('/auth/discord/callback', async (req, res) => {
 
 app.get('/logout', (req, res) => req.session.destroy(() => res.redirect('/')));
 
+function requireAuth(req, res, next) {
+  if (!req.session.user) return res.status(401).json({ error: 'Not logged in' });
+  next();
+}
+
+app.get('/api/event', async (req, res) => {
+  const ev = await getEvent();
+  res.json(ev);
+});
+
+app.put('/api/event', requireAuth, async (req, res) => {
+  const raw = String(req.body.event_at || '').trim();
+  const title = String(req.body.title || 'Murongs Grand Melee').trim().slice(0,100) || 'Murongs Grand Melee';
+  let eventAt = null;
+  if (raw) {
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return res.status(400).json({ error: 'Invalid date/time' });
+    eventAt = d.toISOString();
+  }
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO mgm_event (id, title, event_at, updated_by, updated_at) VALUES (1, $1, $2, $3, CURRENT_TIMESTAMP)
+       ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title, event_at=EXCLUDED.event_at, updated_by=EXCLUDED.updated_by, updated_at=CURRENT_TIMESTAMP
+       RETURNING *`,
+      [title, eventAt, req.session.user.id]
+    );
+    console.log(`[event] updated by ${req.session.user.id} -> ${eventAt} "${title}"`);
+    try {
+      const bot = require('./bot');
+      if (bot.updateEventChannel) { const c = bot.getClient && bot.getClient(); if (c) await bot.updateEventChannel(c, pool); }
+    } catch {}
+    res.json(rows[0]);
+  } catch (e) {
+    console.error('[event] update failed', e.message);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
 app.get('/', async (req, res) => {
   const user = req.session.user || null;
   let userReg = null;
   let registrations = [];
   let dbError = null;
+  let mgmEvent = null;
+  try { mgmEvent = await getEvent(); } catch {}
   if (user) {
     try {
       userReg = (await pool.query('SELECT * FROM registrations WHERE discord_id=$1', [user.id])).rows[0] || null;
@@ -173,7 +227,7 @@ app.get('/', async (req, res) => {
       if (!dbError) dbError = 'Database unreachable - registrations temporarily unavailable.';
     }
   }
-  res.render('index', { user, userReg, registrations, error: req.query.error, dbError });
+  res.render('index', { user, userReg, registrations, error: req.query.error, dbError, mgmEvent });
 });
 
 app.post('/register', async (req, res) => {

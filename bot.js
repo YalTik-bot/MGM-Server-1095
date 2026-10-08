@@ -12,7 +12,7 @@ const LIST_CHANNEL_ID = process.env.MGM_CHANNEL_ID || process.env.MGM_LIST_CHANN
 
 function fmtPower(n) { return Number(n).toLocaleString('en-US'); }
 
-function buildListEmbed(registrations, guildName) {
+function buildListEmbed(registrations, guildName, eventRow) {
   const going = registrations.filter(r => r.participating);
   const notGoing = registrations.filter(r => !r.participating);
   const total = registrations.length;
@@ -20,9 +20,13 @@ function buildListEmbed(registrations, guildName) {
   const goingText = going.length ? going.map(line).join('\n') : '_Nobody_';
   const notGoingText = notGoing.length ? notGoing.map(line).join('\n') : '_Nobody_';
   const trunc = (s, max = 1024) => s.length > max ? s.slice(0, max - 20).replace(/\n[^\n]*$/, '') + '\n… and more' : s;
+  const ev = eventRow ? formatEventLine(eventRow.event_at) : null;
+  const descEvent = ev
+    ? `📅 **Event:** <t:${ev.ts}:F> (<t:${ev.ts}:R>) — ${ev.br} Brussels`
+    : `📅 **Event:** _Not set yet — set a date on the dashboard_`;
   const embed = new EmbedBuilder()
-    .setTitle('Murongs Grand Melee — Server 1095')
-    .setDescription(`Total registered: **${total}** — green = going, red = not going`)
+    .setTitle(eventRow?.title || 'Murongs Grand Melee — Server 1095')
+    .setDescription(`${descEvent}\nTotal registered: **${total}** — green = going, red = not going`)
     .setColor(0xf59e0b)
     .setTimestamp(new Date());
   if (guildName) embed.setFooter({ text: guildName });
@@ -73,7 +77,8 @@ async function updateListChannel(client, pool) {
     const ch = await client.channels.fetch(LIST_CHANNEL_ID).catch(() => null);
     if (!ch || !ch.isTextBased()) { console.log('[bot] MGM list channel not found:', LIST_CHANNEL_ID); return; }
     const regs = await fetchRegistrations(pool);
-    const embed = buildListEmbed(regs, ch.guild?.name || null);
+    const eventRow = await getEventRow(pool);
+    const embed = buildListEmbed(regs, ch.guild?.name || null, eventRow);
     const components = buildListComponents();
 
     // Find and update the last bot message in the channel, else send a new one
@@ -132,6 +137,27 @@ function buildRegisterModal() {
   return modal;
 }
 
+let _client = null;
+function getClient() { return _client; }
+
+async function getEventRow(pool) {
+  try { const { rows } = await pool.query('SELECT * FROM mgm_event WHERE id=1'); return rows[0] || null; } catch { return null; }
+}
+
+function formatEventLine(eventAt) {
+  if (!eventAt) return null;
+  try {
+    const d = new Date(eventAt);
+    if (isNaN(d.getTime())) return null;
+    const ts = Math.floor(d.getTime() / 1000);
+    // Use Discord timestamp + human fallback; show Brussels time too
+    const br = d.toLocaleString('en-GB', { timeZone: 'Europe/Brussels', dateStyle: 'medium', timeStyle: 'short' });
+    return { ts, br, iso: d.toISOString() };
+  } catch { return null; }
+}
+
+async function updateEventChannel(client, pool) { return updateListChannel(client, pool); }
+
 async function start(pool) {
   if (!TOKEN) {
     console.log('[bot] DISCORD_TOKEN not set — bot disabled (dashboard still works)');
@@ -139,6 +165,7 @@ async function start(pool) {
   }
   const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
 
+  _client = client;
   client.once(Events.ClientReady, async () => {
     console.log(`[bot] Ready as ${client.user.tag} (${client.user.id}) — guild ${GUILD_ID} — list channel ${LIST_CHANNEL_ID || '(not set, uses command channel)'}`);
     await registerCommands();
@@ -161,7 +188,8 @@ async function start(pool) {
 
         if (sub === 'list') {
           const regs = await fetchRegistrations(pool);
-          const embed = buildListEmbed(regs, guildName);
+          const eventRow = await getEventRow(pool);
+          const embed = buildListEmbed(regs, guildName, eventRow);
           const components = buildListComponents();
           // If LIST_CHANNEL_ID set, post there and confirm ephemerally
           if (LIST_CHANNEL_ID) {
@@ -208,7 +236,8 @@ async function start(pool) {
         }
         if (id === 'mgm_refresh') {
           const regs = await fetchRegistrations(pool);
-          const embed = buildListEmbed(regs, interaction.guild?.name || null);
+          const eventRow = await getEventRow(pool);
+          const embed = buildListEmbed(regs, interaction.guild?.name || null, eventRow);
           return interaction.update({ embeds: [embed], components: buildListComponents() });
         }
         if (id === 'mgm_join' || id === 'mgm_leave') {
@@ -223,7 +252,7 @@ async function start(pool) {
           // Update the message in place if it's the list embed, else ephemeral confirm
           try {
             const regs = await fetchRegistrations(pool);
-            const embed = buildListEmbed(regs, interaction.guild?.name || null);
+            const embed = buildListEmbed(regs, interaction.guild?.name || null, await getEventRow(pool));
             if (interaction.message?.embeds?.length) await interaction.update({ embeds: [embed], components: buildListComponents() });
             else await interaction.reply({ content: want ? '✅ You are now marked as **Going**.' : '❌ You are now marked as **Not Going**.', ephemeral: true });
           } catch {
@@ -243,4 +272,4 @@ async function start(pool) {
   return client;
 }
 
-module.exports = { start, buildListEmbed, updateListChannel };
+module.exports = { start, buildListEmbed, updateListChannel, updateEventChannel, getClient, getEventRow };

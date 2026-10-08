@@ -14,6 +14,17 @@
     server_error: 'Something went wrong on our side. Try again in a moment.',
     invalid_input: 'Enter an in-game name and a valid Power number.'
   };
+  const _ev = typeof mgmEvent !== 'undefined' ? mgmEvent : null;
+  let _evDisplay = null;
+  if (_ev && _ev.event_at) {
+    try {
+      const d = new Date(_ev.event_at);
+      if (!isNaN(d.getTime())) {
+        const ts = Math.floor(d.getTime()/1000);
+        _evDisplay = { iso: _ev.event_at, ts, localStr: d.toLocaleString('en-GB', { timeZone: 'Europe/Brussels', dateStyle: 'full', timeStyle: 'short' }) };
+      }
+    } catch {}
+  }
 %>
 <header class="border-b border-stone-800">
   <div class="mx-auto flex max-w-4xl items-center justify-between px-4 py-4">
@@ -35,6 +46,25 @@
     <div class="mb-6 rounded border border-amber-900 bg-amber-950 px-4 py-3 text-amber-200">⚠️ <%= dbError %></div>
   <% } %>
 
+  <!-- Event banner — visible to everyone -->
+  <section class="mb-6 rounded-lg border <%= _evDisplay ? 'border-amber-800 bg-amber-950/40' : 'border-stone-800 bg-stone-900' %> p-5">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <h2 class="text-sm font-semibold tracking-wide text-stone-400 uppercase">Event</h2>
+        <p class="mt-1 text-lg font-semibold"><%= _ev ? (_ev.title || 'Murongs Grand Melee') : 'Murongs Grand Melee' %></p>
+        <% if (_evDisplay) { %>
+          <p class="mt-1 text-stone-200">📅 <span class="font-medium"><%= _evDisplay.localStr %> (Brussels)</span></p>
+          <p class="text-sm text-stone-400">UTC: <%= new Date(_evDisplay.iso).toISOString().replace('T',' ').slice(0,16) %> UTC &nbsp;·&nbsp; <span id="eventCountdown" class="text-amber-300"></span></p>
+        <% } else { %>
+          <p class="mt-1 text-stone-400">No date set yet — set one below.</p>
+        <% } %>
+      </div>
+      <% if (user) { %>
+        <button id="btnEditEvent" class="shrink-0 rounded border border-stone-700 bg-stone-800 px-3 py-1.5 text-sm hover:bg-stone-700">Edit</button>
+      <% } %>
+    </div>
+  </section>
+
   <% if (!user) { %>
     <section class="rounded-lg border border-stone-800 bg-stone-900 p-8">
       <h2 class="text-xl font-semibold mb-2">Log in to see the participant list</h2>
@@ -42,6 +72,30 @@
       <a href="/auth/discord" class="inline-block rounded bg-indigo-500 px-5 py-2.5 font-medium text-white hover:bg-indigo-400">Log in with Discord</a>
     </section>
   <% } else { %>
+
+    <!-- Event editor (collapsible) -->
+    <section id="eventEditor" class="mb-6 hidden rounded-lg border border-stone-800 bg-stone-900 p-6">
+      <h3 class="text-sm font-semibold tracking-wide text-stone-400 uppercase mb-4">Edit event date & time</h3>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <label class="block">
+          <span class="mb-1 block text-sm text-stone-300">Title</span>
+          <input id="ev_title" type="text" maxlength="100" value="<%= _ev ? (_ev.title || '') : 'Murongs Grand Melee' %>"
+                 class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
+        </label>
+        <label class="block">
+          <span class="mb-1 block text-sm text-stone-300">Date & time (your local time)</span>
+          <input id="ev_datetime" type="datetime-local"
+                 class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
+        </label>
+      </div>
+      <p class="mt-2 text-xs text-stone-500">Leave the date empty to clear the event date. Changing it updates the dashboard and the Discord channel instantly.</p>
+      <div class="mt-4 flex gap-3">
+        <button id="btnSaveEvent" class="rounded bg-amber-500 px-5 py-2 font-medium text-stone-950 hover:bg-amber-400">Save</button>
+        <button id="btnClearEvent" class="rounded border border-stone-700 bg-stone-800 px-4 py-2 text-sm hover:bg-stone-700">Clear date</button>
+        <span id="evMsg" class="self-center text-sm text-stone-400"></span>
+      </div>
+    </section>
+
     <section class="mb-10 rounded-lg border border-stone-800 bg-stone-900 p-6">
       <h2 class="text-lg font-semibold mb-4"><%= userReg ? 'Update your registration' : 'Register' %></h2>
       <form method="POST" action="/register" class="grid gap-4 sm:grid-cols-3">
@@ -106,5 +160,72 @@
     </section>
   <% } %>
 </main>
+<script>
+(function(){
+  const iso = <%- JSON.stringify(_ev && _ev.event_at ? new Date(_ev.event_at).toISOString() : null) %>;
+  const el = document.getElementById('ev_datetime');
+  const ed = document.getElementById('eventEditor');
+  const btnEdit = document.getElementById('btnEditEvent');
+  const btnSave = document.getElementById('btnSaveEvent');
+  const btnClear = document.getElementById('btnClearEvent');
+  const titleEl = document.getElementById('ev_title');
+  const msgEl = document.getElementById('evMsg');
+  const countdownEl = document.getElementById('eventCountdown');
+
+  function toLocalInput(isoStr){
+    if(!isoStr) return '';
+    const d = new Date(isoStr);
+    if(isNaN(d.getTime())) return '';
+    const pad = n => String(n).padStart(2,'0');
+    return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
+  }
+  if(el) el.value = toLocalInput(iso);
+
+  if(btnEdit && ed){
+    btnEdit.addEventListener('click', () => {
+      ed.classList.toggle('hidden');
+      if(!ed.classList.contains('hidden') && el) el.focus();
+    });
+  }
+
+  async function saveEvent(clear){
+    if(!btnSave || !el || !titleEl) return;
+    const title = titleEl.value.trim().slice(0,100) || 'Murongs Grand Melee';
+    let event_at = null;
+    if(!clear){
+      const v = el.value.trim();
+      if(v) event_at = new Date(v).toISOString();
+    }
+    msgEl.textContent = 'Saving…';
+    btnSave.disabled = true;
+    try{
+      const r = await fetch('/api/event', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, event_at })
+      });
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(j.error || 'Save failed');
+      msgEl.textContent = 'Saved — reloading…';
+      location.reload();
+    }catch(e){
+      msgEl.textContent = e.message || 'Failed';
+      btnSave.disabled = false;
+    }
+  }
+  if(btnSave) btnSave.addEventListener('click', () => saveEvent(false));
+  if(btnClear) btnClear.addEventListener('click', () => { if(el) el.value=''; saveEvent(true); });
+
+  if(countdownEl && iso){
+    function tick(){
+      const diff = new Date(iso).getTime() - Date.now();
+      if(diff <= 0){ countdownEl.textContent = '• Started'; return; }
+      const d = Math.floor(diff/86400000), h = Math.floor(diff%86400000/3600000), m = Math.floor(diff%3600000/60000);
+      countdownEl.textContent = '• ' + (d? d+'d ':'') + h+'h '+m+'m left';
+    }
+    tick(); setInterval(tick, 60000);
+  }
+})();
+</script>
 </body>
 </html>
