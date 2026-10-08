@@ -31,6 +31,9 @@
   <% if (error) { %>
     <div class="mb-6 rounded border border-red-900 bg-red-950 px-4 py-3 text-red-200"><%= errors[error] || 'Something went wrong.' %></div>
   <% } %>
+  <% if (typeof dbError !== 'undefined' && dbError) { %>
+    <div class="mb-6 rounded border border-amber-900 bg-amber-950 px-4 py-3 text-amber-200">⚠️ <%= dbError %></div>
+  <% } %>
 
   <% if (!user) { %>
     <section class="rounded-lg border border-stone-800 bg-stone-900 p-8">

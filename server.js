@@ -11,8 +11,13 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('localhost')
     ? false
-    : { rejectUnauthorized: false }
+    : { rejectUnauthorized: false },
+  connectionTimeoutMillis: 5000,
+  idleTimeoutMillis: 30000,
+  query_timeout: 5000,
 });
+pool.on('error', e => console.error('[db] pool error', e.message));
+if (!process.env.DATABASE_URL) console.error('[db] DATABASE_URL not set - registrations will fail');
 
 pool.query(`
   CREATE TABLE IF NOT EXISTS registrations (
@@ -137,19 +142,25 @@ app.get('/auth/discord/callback', async (req, res) => {
 app.get('/logout', (req, res) => req.session.destroy(() => res.redirect('/')));
 
 app.get('/', async (req, res) => {
-  try {
-    const user = req.session.user || null;
-    let userReg = null;
-    let registrations = [];
-    if (user) {
+  const user = req.session.user || null;
+  let userReg = null;
+  let registrations = [];
+  let dbError = null;
+  if (user) {
+    try {
       userReg = (await pool.query('SELECT * FROM registrations WHERE discord_id=$1', [user.id])).rows[0] || null;
-      registrations = (await pool.query('SELECT * FROM registrations ORDER BY power DESC, in_game_name ASC')).rows;
+    } catch (e) {
+      console.error('[db] userReg query failed:', e.code, e.message);
+      dbError = 'Database unreachable - registrations temporarily unavailable. Check DATABASE_URL in Railway variables.';
     }
-    res.render('index', { user, userReg, registrations, error: req.query.error });
-  } catch (e) {
-    console.error(e);
-    res.status(500).send('Database error');
+    try {
+      registrations = (await pool.query('SELECT * FROM registrations ORDER BY power DESC, in_game_name ASC')).rows;
+    } catch (e) {
+      console.error('[db] registrations query failed:', e.code, e.message);
+      if (!dbError) dbError = 'Database unreachable - registrations temporarily unavailable.';
+    }
   }
+  res.render('index', { user, userReg, registrations, error: req.query.error, dbError });
 });
 
 app.post('/register', async (req, res) => {
@@ -202,7 +213,11 @@ app.get('/export', async (req, res) => {
   }
 });
 
-app.get('/auth/debug', (req, res) => res.json({ hasClientId: !!CLIENT_ID, clientId: CLIENT_ID || null, redirectUri: REDIRECT_URI || null, hasSecret: !!CLIENT_SECRET, guildId: GUILD_ID || null, nodeEnv: process.env.NODE_ENV || null }));
+app.get('/auth/debug', async (req, res) => {
+  let dbOk = null;
+  try { await pool.query('SELECT 1'); dbOk = true; } catch (e) { dbOk = e.code + ': ' + e.message.slice(0,120); }
+  res.json({ hasClientId: !!CLIENT_ID, clientId: CLIENT_ID || null, redirectUri: REDIRECT_URI || null, hasSecret: !!CLIENT_SECRET, guildId: GUILD_ID || null, nodeEnv: process.env.NODE_ENV || null, hasDatabaseUrl: !!process.env.DATABASE_URL, dbStatus: dbOk });
+});
 
 if (!CLIENT_ID || !CLIENT_SECRET || !REDIRECT_URI || !GUILD_ID) console.error('[startup] Missing env:', { hasId: !!CLIENT_ID, hasSecret: !!CLIENT_SECRET, redirectUri: REDIRECT_URI, guildId: GUILD_ID });
 else console.log('[startup] OAuth configured: client', CLIENT_ID, 'redirect', REDIRECT_URI, 'guild', GUILD_ID);
