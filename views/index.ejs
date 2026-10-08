@@ -67,8 +67,13 @@
 
   <% if (!user) { %>
     <section class="rounded-lg border border-stone-800 bg-stone-900 p-8">
-      <h2 class="text-xl font-semibold mb-2">Log in to see the participant list</h2>
-      <p class="text-stone-300 mb-6">Members of the rush1095 Discord server can register and view who is taking part.</p>
+      <h2 class="text-xl font-semibold mb-2">How to register</h2>
+      <ol class="list-decimal list-inside space-y-2 text-stone-300 mb-6">
+        <li>Log in with Discord (you must be a member of the rush1095 server).</li>
+        <li>Fill in your <span class="text-stone-100 font-medium">in-game name</span> and <span class="text-stone-100 font-medium">power</span> — choose <span class="text-stone-100">Yes</span> if you are going, <span class="text-stone-100">No</span> if not.</li>
+        <li>Click <span class="text-stone-100 font-medium">Register</span>. You can edit anytime. In Discord, type <code class="rounded bg-stone-800 px-1.5 py-0.5 text-amber-300">/mgm register</code> or use the buttons in the MGM channel.</li>
+      </ol>
+      <p class="text-sm text-stone-400 mb-6">Your entry appears instantly on the dashboard and in the Discord channel list (<code class="rounded bg-stone-800 px-1 py-0.5">/mgm list</code> to refresh).</p>
       <a href="/auth/discord" class="inline-block rounded bg-indigo-500 px-5 py-2.5 font-medium text-white hover:bg-indigo-400">Log in with Discord</a>
     </section>
   <% } else { %>
@@ -96,6 +101,9 @@
       </div>
     </section>
 
+    <section class="mb-2 rounded-lg border border-stone-800 bg-stone-900/60 p-4">
+      <p class="text-sm text-stone-300"><span class="font-semibold text-stone-100">How to register:</span> Enter your in-game name + power and pick <span class="text-emerald-400">Yes (Going)</span> or <span class="text-red-400">No</span>. In Discord, type <code class="rounded bg-stone-800 px-1.5 py-0.5 text-amber-300">/mgm register</code> or tap <span class="font-medium">Register / Edit</span> in the MGM channel — then toggle with <span class="font-medium">I'm Going ✅</span> / <span class="font-medium">Not Going ❌</span>.</p>
+    </section>
     <section class="mb-10 rounded-lg border border-stone-800 bg-stone-900 p-6">
       <h2 class="text-lg font-semibold mb-4"><%= userReg ? 'Update your registration' : 'Register' %></h2>
       <form method="POST" action="/register" class="grid gap-4 sm:grid-cols-3">
