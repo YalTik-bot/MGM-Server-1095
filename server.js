@@ -44,7 +44,7 @@ const GUILD_ID = process.env.DISCORD_GUILD_ID;
 
 app.get('/auth/discord', (req, res) => {
   res.redirect(
-    'https://discord.com/api/oauth2/authorize' +
+    'https://discord.com/oauth2/authorize' +
     `?client_id=${CLIENT_ID}` +
     `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
     '&response_type=code&scope=identify%20guilds'
