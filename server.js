@@ -53,7 +53,11 @@ app.get('/auth/discord', (req, res) => {
 
 app.get('/auth/discord/callback', async (req, res) => {
   const code = req.query.code;
+  const oauthErr = req.query.error;
+  if (oauthErr) { console.error('[oauth] Discord error:', oauthErr, req.query.error_description); return res.redirect('/?error=token_failed'); }
   if (!code) return res.redirect('/?error=no_code');
+  if (!CLIENT_ID || !CLIENT_SECRET || !REDIRECT_URI) { console.error('[oauth] Missing env', { hasId: !!CLIENT_ID, hasSecret: !!CLIENT_SECRET, redirectUri: REDIRECT_URI }); return res.redirect('/?error=server_error'); }
+  console.log('[oauth] exchanging code, redirect_uri=', REDIRECT_URI, 'client_id=', CLIENT_ID);
   try {
     const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
       method: 'POST',
@@ -67,7 +71,10 @@ app.get('/auth/discord/callback', async (req, res) => {
       })
     });
     const tokens = await tokenRes.json();
-    if (!tokens.access_token) return res.redirect('/?error=token_failed');
+    if (!tokens.access_token) {
+      console.error('[oauth] token exchange failed:', tokenRes.status, JSON.stringify(tokens), 'redirect_uri=', REDIRECT_URI);
+      return res.redirect('/?error=token_failed');
+    }
 
     const headers = { Authorization: `Bearer ${tokens.access_token}` };
     const user = await fetch('https://discord.com/api/users/@me', { headers }).then(r => r.json());
@@ -154,5 +161,10 @@ app.get('/export', async (req, res) => {
     res.status(500).send('Database error');
   }
 });
+
+app.get('/auth/debug', (req, res) => res.json({ hasClientId: !!CLIENT_ID, clientId: CLIENT_ID || null, redirectUri: REDIRECT_URI || null, hasSecret: !!CLIENT_SECRET, guildId: GUILD_ID || null, nodeEnv: process.env.NODE_ENV || null }));
+
+if (!CLIENT_ID || !CLIENT_SECRET || !REDIRECT_URI || !GUILD_ID) console.error('[startup] Missing env:', { hasId: !!CLIENT_ID, hasSecret: !!CLIENT_SECRET, redirectUri: REDIRECT_URI, guildId: GUILD_ID });
+else console.log('[startup] OAuth configured: client', CLIENT_ID, 'redirect', REDIRECT_URI, 'guild', GUILD_ID);
 
 app.listen(PORT, () => console.log(`MGM running on ${PORT}`));
