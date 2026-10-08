@@ -105,6 +105,7 @@ function buildMgmCommand() {
     .addSubcommand(sc => sc.setName('register').setDescription('Register or update: name + power + going'))
     .addSubcommand(sc => sc.setName('list').setDescription('Show who is going and who is not (posts in MGM channel)'))
     .addSubcommand(sc => sc.setName('status').setDescription('Show your own registration'))
+    .addSubcommand(sc => sc.setName('event').setDescription('Set or clear the event date/time').addStringOption(o => o.setName('when').setDescription('Date & time, e.g. 2026-10-20 19:00 or empty to clear').setRequired(false)).addStringOption(o => o.setName('title').setDescription('Event title').setRequired(false)))
     .toJSON();
 }
 
@@ -199,6 +200,24 @@ async function start(pool) {
           }
           // Otherwise post publicly in current channel
           return interaction.reply({ embeds: [embed], components });
+        }
+
+        if (sub === 'event') {
+          const whenRaw = interaction.options.getString('when');
+          const titleRaw = interaction.options.getString('title');
+          const title = (titleRaw || '').trim().slice(0,100) || 'Murongs Grand Melee';
+          let eventAt = null;
+          if (whenRaw && whenRaw.trim()) {
+            const normalized = whenRaw.trim().replace(' ', 'T');
+            const parsed = new Date(normalized);
+            if (isNaN(parsed.getTime())) return interaction.reply({ content: '❌ Invalid date. Use `YYYY-MM-DD HH:MM` (e.g. `2026-10-20 19:00`) or leave empty to clear.', ephemeral: true });
+            eventAt = parsed.toISOString();
+          }
+          await pool.query('INSERT INTO mgm_event (id, title, event_at, updated_by, updated_at) VALUES (1, $1, $2, $3, CURRENT_TIMESTAMP) ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title, event_at=EXCLUDED.event_at, updated_by=EXCLUDED.updated_by, updated_at=CURRENT_TIMESTAMP', [title, eventAt, interaction.user.id]);
+          await updateListChannel(client, pool);
+          const whenDesc = eventAt ? '<t:' + Math.floor(new Date(eventAt).getTime()/1000) + ':F> (<t:' + Math.floor(new Date(eventAt).getTime()/1000) + ':R>)' : '_cleared_';
+          const chMention = LIST_CHANNEL_ID ? '<#' + LIST_CHANNEL_ID + '>' : 'the MGM channel';
+          return interaction.reply({ content: '✅ Event set to **' + title + '** — ' + whenDesc + '. Updated in ' + chMention + ' and on the dashboard.' });
         }
 
         // register (default)
