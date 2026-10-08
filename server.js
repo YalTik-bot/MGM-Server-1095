@@ -59,23 +59,36 @@ app.get('/auth/discord/callback', async (req, res) => {
   if (!CLIENT_ID || !CLIENT_SECRET || !REDIRECT_URI) { console.error('[oauth] Missing env', { hasId: !!CLIENT_ID, hasSecret: !!CLIENT_SECRET, redirectUri: REDIRECT_URI }); return res.redirect('/?error=server_error'); }
   console.log('[oauth] exchanging code, redirect_uri=', REDIRECT_URI, 'client_id=', CLIENT_ID);
   try {
-    const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: CLIENT_ID,
-        client_secret: CLIENT_SECRET,
-        grant_type: 'authorization_code',
-        code,
-        redirect_uri: REDIRECT_URI
-      })
-    });
+    const controller = new AbortController();
+    const tOut = setTimeout(() => controller.abort(), 10000);
+    let tokenRes;
+    try {
+      tokenRes = await fetch('https://discord.com/api/oauth2/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: CLIENT_ID,
+          client_secret: CLIENT_SECRET,
+          grant_type: 'authorization_code',
+          code,
+          redirect_uri: REDIRECT_URI
+        }),
+        signal: controller.signal
+      });
+    } catch (fe) {
+      clearTimeout(tOut);
+      console.error('[oauth] fetch aborted/failed:', fe.message, fe.cause || '');
+      return res.redirect('/?error=token_failed');
+    }
+    clearTimeout(tOut);
+    console.log('[oauth] token response', tokenRes.status);
     const tokens = await tokenRes.json();
     if (!tokens.access_token) {
       console.error('[oauth] token exchange failed:', tokenRes.status, JSON.stringify(tokens), 'redirect_uri=', REDIRECT_URI);
       return res.redirect('/?error=token_failed');
     }
 
+    console.log('[oauth] token ok, fetching user+guilds');
     const headers = { Authorization: `Bearer ${tokens.access_token}` };
     const user = await fetch('https://discord.com/api/users/@me', { headers }).then(r => r.json());
     const guilds = await fetch('https://discord.com/api/users/@me/guilds', { headers }).then(r => r.json());
@@ -89,7 +102,7 @@ app.get('/auth/discord/callback', async (req, res) => {
     req.session.user = { id: user.id, username: user.global_name || user.username };
     res.redirect('/');
   } catch (err) {
-    console.error(err);
+    console.error('[oauth] callback error:', err.message, err.stack?.slice(0,500));
     res.redirect('/?error=server_error');
   }
 });
