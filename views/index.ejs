@@ -21,7 +21,7 @@
       const d = new Date(_ev.event_at);
       if (!isNaN(d.getTime())) {
         const ts = Math.floor(d.getTime()/1000);
-        _evDisplay = { iso: _ev.event_at, ts, localStr: d.toLocaleString('en-GB', { timeZone: 'Europe/Brussels', dateStyle: 'full', timeStyle: 'short' }) };
+        _evDisplay = { iso: _ev.event_at, ts, utcStr: d.toLocaleString('en-GB', { timeZone: 'UTC', dateStyle: 'full', timeStyle: 'short' }) + ' UTC' };
       }
     } catch {}
   }
@@ -53,8 +53,8 @@
         <h2 class="text-sm font-semibold tracking-wide text-stone-400 uppercase">Event</h2>
         <p class="mt-1 text-lg font-semibold"><%= _ev ? (_ev.title || 'Murongs Grand Melee') : 'Murongs Grand Melee' %></p>
         <% if (_evDisplay) { %>
-          <p class="mt-1 text-stone-200">📅 <span class="font-medium"><%= _evDisplay.localStr %> (Brussels)</span></p>
-          <p class="text-sm text-stone-400">UTC: <%= new Date(_evDisplay.iso).toISOString().replace('T',' ').slice(0,16) %> UTC &nbsp;·&nbsp; <span id="eventCountdown" class="text-amber-300"></span></p>
+          <p class="mt-1 text-stone-200">📅 <span class="font-medium"><%= _evDisplay.utcStr %></span></p>
+          <p class="text-sm text-stone-400"><span id="eventCountdown" class="text-amber-300"></span></p>
         <% } else { %>
           <p class="mt-1 text-stone-400">No date set yet — set one below.</p>
         <% } %>
@@ -83,12 +83,12 @@
                  class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
         </label>
         <label class="block">
-          <span class="mb-1 block text-sm text-stone-300">Date & time (your local time)</span>
+          <span class="mb-1 block text-sm text-stone-300">Date & time (UTC)</span>
           <input id="ev_datetime" type="datetime-local"
                  class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
         </label>
       </div>
-      <p class="mt-2 text-xs text-stone-500">Leave the date empty to clear the event date. Changing it updates the dashboard and the Discord channel instantly.</p>
+      <p class="mt-2 text-xs text-stone-500">Leave the date empty to clear the event date. Time is in UTC. Changing it updates the dashboard and the Discord channel instantly.</p>
       <div class="mt-4 flex gap-3">
         <button id="btnSaveEvent" class="rounded bg-amber-500 px-5 py-2 font-medium text-stone-950 hover:bg-amber-400">Save</button>
         <button id="btnClearEvent" class="rounded border border-stone-700 bg-stone-800 px-4 py-2 text-sm hover:bg-stone-700">Clear date</button>
@@ -177,7 +177,8 @@
     const d = new Date(isoStr);
     if(isNaN(d.getTime())) return '';
     const pad = n => String(n).padStart(2,'0');
-    return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
+    // Use UTC so the input shows UTC (as labeled)
+    return d.getUTCFullYear()+'-'+pad(d.getUTCMonth()+1)+'-'+pad(d.getUTCDate())+'T'+pad(d.getUTCHours())+':'+pad(d.getUTCMinutes());
   }
   if(el) el.value = toLocalInput(iso);
 
@@ -194,7 +195,8 @@
     let event_at = null;
     if(!clear){
       const v = el.value.trim();
-      if(v) event_at = new Date(v).toISOString();
+      if(v) event_at = new Date(v + ':00Z').toISOString();
+      // input is UTC, so interpret as UTC (append Z); datetime-local is YYYY-MM-DDTHH:MM
     }
     msgEl.textContent = 'Saving…';
     btnSave.disabled = true;

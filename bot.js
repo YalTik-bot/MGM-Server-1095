@@ -22,7 +22,7 @@ function buildListEmbed(registrations, guildName, eventRow) {
   const trunc = (s, max = 1024) => s.length > max ? s.slice(0, max - 20).replace(/\n[^\n]*$/, '') + '\n… and more' : s;
   const ev = eventRow ? formatEventLine(eventRow.event_at) : null;
   const descEvent = ev
-    ? `📅 **Event:** <t:${ev.ts}:F> (<t:${ev.ts}:R>) — ${ev.br} Brussels`
+    ? `📅 **Event:** <t:${ev.ts}:F> (<t:${ev.ts}:R>) — ${ev.utc}`
     : `📅 **Event:** _Not set yet — set a date on the dashboard_`;
   const embed = new EmbedBuilder()
     .setTitle(eventRow?.title || 'Murongs Grand Melee — Server 1095')
@@ -151,9 +151,9 @@ function formatEventLine(eventAt) {
     const d = new Date(eventAt);
     if (isNaN(d.getTime())) return null;
     const ts = Math.floor(d.getTime() / 1000);
-    // Use Discord timestamp + human fallback; show Brussels time too
-    const br = d.toLocaleString('en-GB', { timeZone: 'Europe/Brussels', dateStyle: 'medium', timeStyle: 'short' });
-    return { ts, br, iso: d.toISOString() };
+    // Use Discord timestamp + human fallback; show UTC
+    const utc = d.toLocaleString('en-GB', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' }) + ' UTC';
+    return { ts, utc, iso: d.toISOString() };
   } catch { return null; }
 }
 
@@ -208,7 +208,8 @@ async function start(pool) {
           const title = (titleRaw || '').trim().slice(0,100) || 'Murongs Grand Melee';
           let eventAt = null;
           if (whenRaw && whenRaw.trim()) {
-            const normalized = whenRaw.trim().replace(' ', 'T');
+            const normalized = whenRaw.trim().replace(' ', 'T') + ':00Z';
+            // Interpret as UTC (user enters UTC time)
             const parsed = new Date(normalized);
             if (isNaN(parsed.getTime())) return interaction.reply({ content: '❌ Invalid date. Use `YYYY-MM-DD HH:MM` (e.g. `2026-10-20 19:00`) or leave empty to clear.', ephemeral: true });
             eventAt = parsed.toISOString();
