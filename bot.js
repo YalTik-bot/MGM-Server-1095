@@ -24,7 +24,7 @@ function buildListEmbed(registrations, guildName, eventRow) {
   const descEvent = ev
     ? `📅 **Event:** <t:${ev.ts}:F> (<t:${ev.ts}:R>) — ${ev.utc}`
     : `📅 **Event:** _Not set yet — set a date on the dashboard_`;
-  const helpLine = `**How to register:** Type \`/mgm register\` → enter your in-game name, power and \`yes\`/\`no\` — or tap **Register / Edit** below. Then use **I'm Going ✅** / **Not Going ❌** to toggle. \`/mgm status\` shows your entry, \`/mgm list\` refreshes this board.`;
+  const helpLine = `**How to register:** Type \`/mgm register\` → enter your in-game name, power and \`yes\`/\`no\` — or tap **Register / Edit** below. Then use **I'm Going ✅** / **Not Going ❌** to toggle. \`/mgm status\` shows your entry, \`/mgm list\` refreshes this board.\n**New event:** Anyone can create a fresh board with \`/mgm event when:2026-11-02 19:00 title:Murongs Grand Melee\` (UTC — leave \`when\` empty for TBA). Fresh list, everyone must re-register.`;
   const embed = new EmbedBuilder()
     .setTitle(eventRow?.title || 'Murongs Grand Melee — Server 1095')
     .setDescription(`${descEvent}\nTotal registered: **${total}** — green = going, red = not going\n\n${helpLine}`)
