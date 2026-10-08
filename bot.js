@@ -53,23 +53,35 @@ function buildListComponents() {
   ];
 }
 
-async function fetchRegistrations(pool) {
-  const { rows } = await pool.query('SELECT * FROM registrations ORDER BY power DESC, in_game_name ASC');
+async function getCurrentEventId(pool) {
+  try { const { rows } = await pool.query('SELECT id FROM mgm_events ORDER BY id DESC LIMIT 1'); return rows[0]?.id || null; } catch { return null; }
+}
+async function getCurrentEventRowById(pool, id) {
+  try { const { rows } = await pool.query('SELECT * FROM mgm_events WHERE id=$1', [id]); return rows[0] || null; } catch { return null; }
+}
+async function fetchRegistrations(pool, eventId = null) {
+  let eid = eventId;
+  if (!eid) eid = await getCurrentEventId(pool);
+  if (!eid) return [];
+  const { rows } = await pool.query('SELECT * FROM registrations WHERE event_id=$1 ORDER BY power DESC, in_game_name ASC', [eid]);
   return rows;
 }
-
-async function upsertRegistration(pool, discordId, discordUsername, inGameName, power, participating) {
+async function upsertRegistration(pool, discordId, discordUsername, inGameName, power, participating, eventId = null) {
+  let eid = eventId;
+  if (!eid) eid = await getCurrentEventId(pool);
+  if (!eid) throw new Error('No event');
   await pool.query(
-    `INSERT INTO registrations (discord_id, discord_username, in_game_name, power, participating, updated_at)
-     VALUES ($1,$2,$3,$4,$5,CURRENT_TIMESTAMP)
-     ON CONFLICT (discord_id) DO UPDATE SET
+    `INSERT INTO registrations (discord_id, discord_username, in_game_name, power, participating, updated_at, event_id)
+     VALUES ($1,$2,$3,$4,$5,CURRENT_TIMESTAMP,$6)
+     ON CONFLICT (discord_id, event_id) DO UPDATE SET
        discord_username=EXCLUDED.discord_username,
        in_game_name=EXCLUDED.in_game_name,
        power=EXCLUDED.power,
        participating=EXCLUDED.participating,
        updated_at=CURRENT_TIMESTAMP`,
-    [discordId, discordUsername, inGameName, power, participating]
+    [discordId, discordUsername, inGameName, power, eid]
   );
+  return eid;
 }
 
 async function updateListChannel(client, pool) {
@@ -106,7 +118,7 @@ function buildMgmCommand() {
     .addSubcommand(sc => sc.setName('register').setDescription('Register or update: name + power + going'))
     .addSubcommand(sc => sc.setName('list').setDescription('Show who is going and who is not (posts in MGM channel)'))
     .addSubcommand(sc => sc.setName('status').setDescription('Show your own registration'))
-    .addSubcommand(sc => sc.setName('event').setDescription('Set or clear the event date/time').addStringOption(o => o.setName('when').setDescription('Date & time, e.g. 2026-10-20 19:00 or empty to clear').setRequired(false)).addStringOption(o => o.setName('title').setDescription('Event title').setRequired(false)))
+    .addSubcommand(sc => sc.setName('event').setDescription('Create a new MGM event (fresh participant list)').addStringOption(o => o.setName('when').setDescription('Date & time UTC, e.g. 2026-10-20 19:00 or empty for TBA').setRequired(false)).addStringOption(o => o.setName('title').setDescription('Event title').setRequired(false)))
     .toJSON();
 }
 
@@ -142,8 +154,11 @@ function buildRegisterModal() {
 let _client = null;
 function getClient() { return _client; }
 
-async function getEventRow(pool) {
-  try { const { rows } = await pool.query('SELECT * FROM mgm_event WHERE id=1'); return rows[0] || null; } catch { return null; }
+async function getEventRow(pool, eventId = null) {
+  try {
+    if (eventId) { const { rows } = await pool.query('SELECT * FROM mgm_events WHERE id=$1', [eventId]); return rows[0] || null; }
+    const { rows } = await pool.query('SELECT * FROM mgm_events ORDER BY id DESC LIMIT 1'); return rows[0] || null;
+  } catch { return null; }
 }
 
 function formatEventLine(eventAt) {
@@ -183,9 +198,12 @@ async function start(pool) {
         const guildName = interaction.guild?.name || null;
 
         if (sub === 'status') {
-          const row = (await pool.query('SELECT * FROM registrations WHERE discord_id=$1', [interaction.user.id])).rows[0];
-          if (!row) return interaction.reply({ content: 'You are not registered yet. Use `/mgm register` to sign up.', ephemeral: true });
-          return interaction.reply({ content: `**${row.in_game_name}** — Power \`${fmtPower(row.power)}\` — ${row.participating ? '✅ Going' : '❌ Not Going'}`, ephemeral: true });
+          const eid = await getCurrentEventId(pool);
+          const row = eid ? (await pool.query('SELECT * FROM registrations WHERE discord_id=$1 AND event_id=$2', [interaction.user.id, eid])).rows[0] : null;
+          if (!row) return interaction.reply({ content: 'You are not registered yet for the current event. Use `/mgm register` to sign up.', ephemeral: true });
+          const ev = await getEventRow(pool, eid);
+          const evLabel = ev ? ` for **${ev.title}**` : '';
+          return interaction.reply({ content: `**${row.in_game_name}** — Power \`${fmtPower(row.power)}\` — ${row.participating ? '✅ Going' : '❌ Not Going'}${evLabel}`, ephemeral: true });
         }
 
         if (sub === 'list') {
@@ -210,16 +228,18 @@ async function start(pool) {
           let eventAt = null;
           if (whenRaw && whenRaw.trim()) {
             const normalized = whenRaw.trim().replace(' ', 'T') + ':00Z';
-            // Interpret as UTC (user enters UTC time)
             const parsed = new Date(normalized);
-            if (isNaN(parsed.getTime())) return interaction.reply({ content: '❌ Invalid date. Use `YYYY-MM-DD HH:MM` (e.g. `2026-10-20 19:00`) or leave empty to clear.', ephemeral: true });
+            if (isNaN(parsed.getTime())) return interaction.reply({ content: '❌ Invalid date. Use `YYYY-MM-DD HH:MM` (e.g. `2026-10-20 19:00`) or leave empty for “TBA”.', ephemeral: true });
             eventAt = parsed.toISOString();
           }
-          await pool.query('INSERT INTO mgm_event (id, title, event_at, updated_by, updated_at) VALUES (1, $1, $2, $3, CURRENT_TIMESTAMP) ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title, event_at=EXCLUDED.event_at, updated_by=EXCLUDED.updated_by, updated_at=CURRENT_TIMESTAMP', [title, eventAt, interaction.user.id]);
+          // B: create a NEW event (fresh participant list). Everyone can create.
+          const { rows } = await pool.query('INSERT INTO mgm_events (title, event_at, created_by, updated_by) VALUES ($1,$2,$3,$3) RETURNING *', [title, eventAt, interaction.user.id]);
+          const newId = rows[0].id;
           await updateListChannel(client, pool);
-          const whenDesc = eventAt ? '<t:' + Math.floor(new Date(eventAt).getTime()/1000) + ':F> (<t:' + Math.floor(new Date(eventAt).getTime()/1000) + ':R>)' : '_cleared_';
+          const whenDesc = eventAt ? '<t:' + Math.floor(new Date(eventAt).getTime()/1000) + ':F> (<t:' + Math.floor(new Date(eventAt).getTime()/1000) + ':R>)' : '_TBA_';
+          const dashUrl = process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}/event/${newId}` : `/event/${newId}`;
           const chMention = LIST_CHANNEL_ID ? '<#' + LIST_CHANNEL_ID + '>' : 'the MGM channel';
-          return interaction.reply({ content: '✅ Event set to **' + title + '** — ' + whenDesc + '. Updated in ' + chMention + ' and on the dashboard.' });
+          return interaction.reply({ content: `✅ **New event #${newId}** created: **${title}** — ${whenDesc}.\nParticipants start empty — everyone must re-register with \`/mgm register\`. Dashboard: ${dashUrl} • Board refreshed in ${chMention}.` });
         }
 
         // register (default)
@@ -263,11 +283,13 @@ async function start(pool) {
         }
         if (id === 'mgm_join' || id === 'mgm_leave') {
           const want = id === 'mgm_join';
-          const row = (await pool.query('SELECT * FROM registrations WHERE discord_id=$1', [interaction.user.id])).rows[0];
+          const eid = await getCurrentEventId(pool);
+          if (!eid) return interaction.reply({ content: 'No active event.', ephemeral: true });
+          const row = (await pool.query('SELECT * FROM registrations WHERE discord_id=$1 AND event_id=$2', [interaction.user.id, eid])).rows[0];
           if (!row) {
-            return interaction.reply({ content: 'You are not registered yet. Click **Register / Edit** first.', ephemeral: true });
+            return interaction.reply({ content: 'You are not registered yet for the current event. Click **Register / Edit** first.', ephemeral: true });
           }
-          await pool.query('UPDATE registrations SET participating=$1, updated_at=CURRENT_TIMESTAMP WHERE discord_id=$2', [want, interaction.user.id]);
+          await pool.query('UPDATE registrations SET participating=$1, updated_at=CURRENT_TIMESTAMP WHERE discord_id=$2 AND event_id=$3', [want, interaction.user.id, eid]);
           console.log(`[bot] ${interaction.user.id} toggle participating -> ${want}`);
           await updateListChannel(client, pool);
           // Update the message in place if it's the list embed, else ephemeral confirm

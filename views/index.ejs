@@ -15,15 +15,20 @@
     invalid_input: 'Enter an in-game name and a valid Power number.'
   };
   const _ev = typeof mgmEvent !== 'undefined' ? mgmEvent : null;
+  const _all = typeof allEvents !== 'undefined' ? allEvents : [];
+  const _curId = typeof currentEventId !== 'undefined' ? currentEventId : (_ev ? _ev.id : null);
   let _evDisplay = null;
   if (_ev && _ev.event_at) {
     try {
       const d = new Date(_ev.event_at);
       if (!isNaN(d.getTime())) {
-        const ts = Math.floor(d.getTime()/1000);
-        _evDisplay = { iso: _ev.event_at, ts, utcStr: d.toLocaleString('en-GB', { timeZone: 'UTC', dateStyle: 'full', timeStyle: 'short' }) + ' UTC' };
+        _evDisplay = { iso: _ev.event_at, ts: Math.floor(d.getTime()/1000), utcStr: d.toLocaleString('en-GB', { timeZone: 'UTC', dateStyle: 'full', timeStyle: 'short' }) + ' UTC' };
       }
     } catch {}
+  }
+  function fmtEvDate(ev){
+    if(!ev || !ev.event_at) return 'TBA';
+    try { const d=new Date(ev.event_at); return d.toLocaleString('en-GB',{timeZone:'UTC',dateStyle:'medium',timeStyle:'short'})+' UTC'; } catch { return 'TBA'; }
   }
 %>
 <header class="border-b border-stone-800">
@@ -46,24 +51,39 @@
     <div class="mb-6 rounded border border-amber-900 bg-amber-950 px-4 py-3 text-amber-200">⚠️ <%= dbError %></div>
   <% } %>
 
-  <!-- Event banner — visible to everyone -->
-  <section class="mb-6 rounded-lg border <%= _evDisplay ? 'border-amber-800 bg-amber-950/40' : 'border-stone-800 bg-stone-900' %> p-5">
+  <!-- Current event banner -->
+  <section class="mb-4 rounded-lg border <%= _evDisplay ? 'border-amber-800 bg-amber-950/40' : 'border-stone-800 bg-stone-900' %> p-5">
     <div class="flex items-start justify-between gap-4">
       <div>
-        <h2 class="text-sm font-semibold tracking-wide text-stone-400 uppercase">Event</h2>
+        <h2 class="text-sm font-semibold tracking-wide text-stone-400 uppercase">Current event <span class="normal-case font-normal text-stone-500">#<%= _curId || '—' %></span></h2>
         <p class="mt-1 text-lg font-semibold"><%= _ev ? (_ev.title || 'Murongs Grand Melee') : 'Murongs Grand Melee' %></p>
         <% if (_evDisplay) { %>
-          <p class="mt-1 text-stone-200">📅 <span class="font-medium"><%= _evDisplay.utcStr %></span></p>
-          <p class="text-sm text-stone-400"><span id="eventCountdown" class="text-amber-300"></span></p>
+          <p class="mt-1 text-stone-200">📅 <span class="font-medium"><%= _evDisplay.utcStr %></span> <span class="text-stone-400 text-sm">— <span id="eventCountdown" class="text-amber-300"></span></span></p>
         <% } else { %>
-          <p class="mt-1 text-stone-400">No date set yet — set one below.</p>
+          <p class="mt-1 text-stone-400">No date set yet — set one below or create a new event.</p>
         <% } %>
+        <p class="mt-2 text-xs text-stone-500">Dashboard: <code class="rounded bg-stone-900 px-1 py-0.5">/event/<%= _curId %></code> — share this link for this event.</p>
       </div>
       <% if (user) { %>
-        <button id="btnEditEvent" class="shrink-0 rounded border border-stone-700 bg-stone-800 px-3 py-1.5 text-sm hover:bg-stone-700">Edit</button>
+        <div class="flex shrink-0 gap-2">
+          <button id="btnEditEvent" class="rounded border border-stone-700 bg-stone-800 px-3 py-1.5 text-sm hover:bg-stone-700">Edit</button>
+          <button id="btnNewEvent" class="rounded bg-amber-500 px-3 py-1.5 text-sm font-medium text-stone-950 hover:bg-amber-400">+ New event</button>
+        </div>
       <% } %>
     </div>
   </section>
+
+  <% if (_all && _all.length > 1) { %>
+    <section class="mb-6 flex flex-wrap items-center gap-2 text-sm">
+      <span class="text-stone-500">All events:</span>
+      <% _all.forEach(ev => { %>
+        <a href="/event/<%= ev.id %>" class="rounded-full border px-3 py-1 <%= ev.id === _curId ? 'border-amber-500 bg-amber-500 text-stone-950 font-medium' : 'border-stone-700 bg-stone-900 text-stone-300 hover:border-stone-600' %>">
+          #<%= ev.id %> <%= (ev.title || 'MGM').slice(0,22) %> · <%= fmtEvDate(ev) %>
+        </a>
+      <% }) %>
+      <a href="/" class="text-stone-500 underline hover:text-stone-300">Latest →</a>
+    </section>
+  <% } %>
 
   <% if (!user) { %>
     <section class="rounded-lg border border-stone-800 bg-stone-900 p-8">
@@ -78,22 +98,45 @@
     </section>
   <% } else { %>
 
-    <!-- Event editor (collapsible) -->
-    <section id="eventEditor" class="mb-6 hidden rounded-lg border border-stone-800 bg-stone-900 p-6">
-      <h3 class="text-sm font-semibold tracking-wide text-stone-400 uppercase mb-4">Edit event date & time</h3>
+    <!-- New event creator -->
+    <section id="newEventBox" class="mb-6 hidden rounded-lg border border-amber-800 bg-amber-950/30 p-6">
+      <h3 class="text-sm font-semibold tracking-wide text-amber-300 uppercase mb-1">Create a new MGM event</h3>
+      <p class="text-sm text-stone-300 mb-4">Starts a fresh dashboard with an empty participant list — everyone must re-register. Everyone can create a new event.</p>
       <div class="grid gap-4 sm:grid-cols-2">
         <label class="block">
           <span class="mb-1 block text-sm text-stone-300">Title</span>
-          <input id="ev_title" type="text" maxlength="100" value="<%= _ev ? (_ev.title || '') : 'Murongs Grand Melee' %>"
-                 class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
+          <input id="new_title" type="text" maxlength="100" value="Murongs Grand Melee" class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
+        </label>
+        <label class="block">
+          <span class="mb-1 block text-sm text-stone-300">Date & time (UTC) — leave empty for TBA</span>
+          <input id="new_datetime" type="datetime-local" class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
+        </label>
+      </div>
+      <div class="mt-4 flex flex-wrap items-center gap-3">
+        <button id="btnCreateEvent" class="rounded bg-amber-500 px-5 py-2 font-medium text-stone-950 hover:bg-amber-400">Create new event</button>
+        <span id="newMsg" class="text-sm text-stone-400"></span>
+      </div>
+      <div class="mt-4 rounded bg-stone-900 p-3 text-xs text-stone-400">
+        <p class="font-semibold text-stone-300 mb-1">Or in Discord (anyone):</p>
+        <code class="block rounded bg-stone-950 px-2 py-1.5 text-amber-300">/mgm event when:2026-11-02 19:00 title:Murongs Grand Melee</code>
+        <p class="mt-1">Creates the same new dashboard — e.g. <code class="text-stone-300">/mgm event when:2026-11-02 19:00</code> for 19:00 UTC. Leave <code>when</code> empty for TBA. The MGM channel board always shows the latest event.</p>
+      </div>
+    </section>
+
+    <!-- Edit current event -->
+    <section id="eventEditor" class="mb-6 hidden rounded-lg border border-stone-800 bg-stone-900 p-6">
+      <h3 class="text-sm font-semibold tracking-wide text-stone-400 uppercase mb-4">Edit this event (#<%= _curId %>)</h3>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <label class="block">
+          <span class="mb-1 block text-sm text-stone-300">Title</span>
+          <input id="ev_title" type="text" maxlength="100" value="<%= _ev ? (_ev.title || '') : 'Murongs Grand Melee' %>" class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
         </label>
         <label class="block">
           <span class="mb-1 block text-sm text-stone-300">Date & time (UTC)</span>
-          <input id="ev_datetime" type="datetime-local"
-                 class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
+          <input id="ev_datetime" type="datetime-local" class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
         </label>
       </div>
-      <p class="mt-2 text-xs text-stone-500">Leave the date empty to clear the event date. Time is in UTC. Changing it updates the dashboard and the Discord channel instantly.</p>
+      <p class="mt-2 text-xs text-stone-500">Leave the date empty to clear it (shows as TBA). Time is in UTC. Saves instantly to dashboard + Discord.</p>
       <div class="mt-4 flex gap-3">
         <button id="btnSaveEvent" class="rounded bg-amber-500 px-5 py-2 font-medium text-stone-950 hover:bg-amber-400">Save</button>
         <button id="btnClearEvent" class="rounded border border-stone-700 bg-stone-800 px-4 py-2 text-sm hover:bg-stone-700">Clear date</button>
@@ -103,20 +146,19 @@
 
     <section class="mb-2 rounded-lg border border-stone-800 bg-stone-900/60 p-4">
       <p class="text-sm text-stone-300"><span class="font-semibold text-stone-100">How to register:</span> Enter your in-game name + power and pick <span class="text-emerald-400">Yes (Going)</span> or <span class="text-red-400">No</span>. In Discord, type <code class="rounded bg-stone-800 px-1.5 py-0.5 text-amber-300">/mgm register</code> or tap <span class="font-medium">Register / Edit</span> in the MGM channel — then toggle with <span class="font-medium">I'm Going ✅</span> / <span class="font-medium">Not Going ❌</span>.</p>
+      <p class="mt-2 text-xs text-stone-500">New event? Everyone must re-register — the list starts empty. In Discord everyone can run <code class="rounded bg-stone-800 px-1 py-0.5 text-amber-300">/mgm event when:YYYY-MM-DD HH:MM</code> to create the next dashboard.</p>
     </section>
     <section class="mb-10 rounded-lg border border-stone-800 bg-stone-900 p-6">
-      <h2 class="text-lg font-semibold mb-4"><%= userReg ? 'Update your registration' : 'Register' %></h2>
+      <h2 class="text-lg font-semibold mb-4"><%= userReg ? 'Update your registration' : 'Register' %> <span class="text-sm font-normal text-stone-500">for #<%= _curId %> · <%= _ev ? (_ev.title || 'MGM') : 'MGM' %></span></h2>
       <form method="POST" action="/register" class="grid gap-4 sm:grid-cols-3">
+        <input type="hidden" name="event_id" value="<%= _curId %>">
         <label class="block">
           <span class="mb-1 block text-sm text-stone-300">In-game name</span>
-          <input name="in_game_name" required maxlength="50" value="<%= userReg ? userReg.in_game_name : '' %>"
-                 class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
+          <input name="in_game_name" required maxlength="50" value="<%= userReg ? userReg.in_game_name : '' %>" class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
         </label>
         <label class="block">
           <span class="mb-1 block text-sm text-stone-300">Power</span>
-          <input name="power" required inputmode="numeric" pattern="[0-9., ]+" placeholder="e.g. 45000000"
-                 value="<%= userReg ? userReg.power : '' %>"
-                 class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
+          <input name="power" required inputmode="numeric" pattern="[0-9., ]+" placeholder="e.g. 45000000" value="<%= userReg ? userReg.power : '' %>" class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
         </label>
         <label class="block">
           <span class="mb-1 block text-sm text-stone-300">Participating</span>
@@ -126,9 +168,7 @@
           </select>
         </label>
         <div class="sm:col-span-3">
-          <button type="submit" class="rounded bg-amber-500 px-5 py-2 font-medium text-stone-950 hover:bg-amber-400">
-            <%= userReg ? 'Save changes' : 'Register' %>
-          </button>
+          <button type="submit" class="rounded bg-amber-500 px-5 py-2 font-medium text-stone-950 hover:bg-amber-400"><%= userReg ? 'Save changes' : 'Register' %></button>
         </div>
       </form>
     </section>
@@ -136,7 +176,7 @@
     <section>
       <div class="mb-3 flex items-end justify-between">
         <h2 class="text-lg font-semibold">Participants <span class="text-stone-400 font-normal">(<%= registrations.length %>)</span></h2>
-        <a href="/export" class="text-sm text-amber-400 underline hover:text-amber-300">Export CSV</a>
+        <a href="/export?event_id=<%= _curId %>" class="text-sm text-amber-400 underline hover:text-amber-300">Export CSV</a>
       </div>
       <div class="overflow-x-auto rounded-lg border border-stone-800">
         <table class="w-full text-left text-sm">
@@ -151,7 +191,7 @@
           </thead>
           <tbody class="divide-y divide-stone-800">
             <% if (!registrations.length) { %>
-              <tr><td colspan="5" class="px-4 py-6 text-center text-stone-400">No registrations yet. Be the first to register above.</td></tr>
+              <tr><td colspan="5" class="px-4 py-6 text-center text-stone-400">No registrations yet for this event. Be the first — or create a new event above.</td></tr>
             <% } %>
             <% registrations.forEach((r, i) => { %>
               <tr class="<%= r.discord_id === user.id ? 'bg-amber-500/10' : '' %>">
@@ -166,34 +206,62 @@
         </table>
       </div>
     </section>
+
+    <% if (_all && _all.length > 1) { %>
+      <section class="mt-8 rounded-lg border border-stone-800 bg-stone-900 p-4">
+        <h3 class="text-sm font-semibold text-stone-400 mb-2">Past events</h3>
+        <div class="space-y-1 text-sm">
+          <% _all.filter(ev=>ev.id!==_curId).forEach(ev=>{ %>
+            <div class="flex justify-between py-1 border-b border-stone-800 last:border-0">
+              <a href="/event/<%= ev.id %>" class="text-amber-400 hover:underline">#<%= ev.id %> — <%= ev.title %></a>
+              <span class="text-stone-500"><%= fmtEvDate(ev) %></span>
+            </div>
+          <% }) %>
+        </div>
+      </section>
+    <% } %>
   <% } %>
 </main>
 <script>
 (function(){
   const iso = <%- JSON.stringify(_ev && _ev.event_at ? new Date(_ev.event_at).toISOString() : null) %>;
+  const curId = <%- JSON.stringify(_curId) %>;
   const el = document.getElementById('ev_datetime');
   const ed = document.getElementById('eventEditor');
+  const newBox = document.getElementById('newEventBox');
   const btnEdit = document.getElementById('btnEditEvent');
+  const btnNew = document.getElementById('btnNewEvent');
   const btnSave = document.getElementById('btnSaveEvent');
   const btnClear = document.getElementById('btnClearEvent');
   const titleEl = document.getElementById('ev_title');
   const msgEl = document.getElementById('evMsg');
   const countdownEl = document.getElementById('eventCountdown');
+  const newTitleEl = document.getElementById('new_title');
+  const newDtEl = document.getElementById('new_datetime');
+  const btnCreate = document.getElementById('btnCreateEvent');
+  const newMsg = document.getElementById('newMsg');
 
   function toLocalInput(isoStr){
     if(!isoStr) return '';
     const d = new Date(isoStr);
     if(isNaN(d.getTime())) return '';
     const pad = n => String(n).padStart(2,'0');
-    // Use UTC so the input shows UTC (as labeled)
     return d.getUTCFullYear()+'-'+pad(d.getUTCMonth()+1)+'-'+pad(d.getUTCDate())+'T'+pad(d.getUTCHours())+':'+pad(d.getUTCMinutes());
   }
   if(el) el.value = toLocalInput(iso);
 
   if(btnEdit && ed){
     btnEdit.addEventListener('click', () => {
+      if(newBox) newBox.classList.add('hidden');
       ed.classList.toggle('hidden');
       if(!ed.classList.contains('hidden') && el) el.focus();
+    });
+  }
+  if(btnNew && newBox){
+    btnNew.addEventListener('click', () => {
+      if(ed) ed.classList.add('hidden');
+      newBox.classList.toggle('hidden');
+      if(!newBox.classList.contains('hidden') && newTitleEl) newTitleEl.focus();
     });
   }
 
@@ -204,12 +272,11 @@
     if(!clear){
       const v = el.value.trim();
       if(v) event_at = new Date(v + ':00Z').toISOString();
-      // input is UTC, so interpret as UTC (append Z); datetime-local is YYYY-MM-DDTHH:MM
     }
     msgEl.textContent = 'Saving…';
     btnSave.disabled = true;
     try{
-      const r = await fetch('/api/event', {
+      const r = await fetch('/api/event/' + curId, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, event_at })
@@ -225,6 +292,31 @@
   }
   if(btnSave) btnSave.addEventListener('click', () => saveEvent(false));
   if(btnClear) btnClear.addEventListener('click', () => { if(el) el.value=''; saveEvent(true); });
+
+  async function createEvent(){
+    if(!btnCreate || !newTitleEl) return;
+    const title = newTitleEl.value.trim().slice(0,100) || 'Murongs Grand Melee';
+    let event_at = null;
+    const v = newDtEl ? newDtEl.value.trim() : '';
+    if(v) event_at = new Date(v + ':00Z').toISOString();
+    newMsg.textContent = 'Creating…';
+    btnCreate.disabled = true;
+    try{
+      const r = await fetch('/api/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, event_at })
+      });
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(j.error || 'Create failed');
+      newMsg.textContent = 'Created — opening…';
+      location.href = '/event/' + j.id;
+    }catch(e){
+      newMsg.textContent = e.message || 'Failed';
+      btnCreate.disabled = false;
+    }
+  }
+  if(btnCreate) btnCreate.addEventListener('click', createEvent);
 
   if(countdownEl && iso){
     function tick(){
