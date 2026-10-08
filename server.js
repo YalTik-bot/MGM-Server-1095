@@ -90,17 +90,44 @@ app.get('/auth/discord/callback', async (req, res) => {
 
     console.log('[oauth] token ok, fetching user+guilds');
     const headers = { Authorization: `Bearer ${tokens.access_token}` };
-    const user = await fetch('https://discord.com/api/users/@me', { headers }).then(r => r.json());
-    const guilds = await fetch('https://discord.com/api/users/@me/guilds', { headers }).then(r => r.json());
+    const fetchJson = async (url, label) => {
+      const c = new AbortController();
+      const to = setTimeout(() => c.abort(), 8000);
+      try {
+        const r = await fetch(url, { headers, signal: c.signal });
+        clearTimeout(to);
+        console.log('[oauth]', label, 'status', r.status);
+        const j = await r.json();
+        if (!r.ok) console.error('[oauth]', label, 'error body:', JSON.stringify(j).slice(0,500));
+        return j;
+      } catch (e) {
+        clearTimeout(to);
+        console.error('[oauth]', label, 'fetch failed:', e.message);
+        throw e;
+      }
+    };
+    let user, guilds;
+    try {
+      user = await fetchJson('https://discord.com/api/users/@me', 'users/@me');
+      console.log('[oauth] user', user?.id, user?.username);
+      guilds = await fetchJson('https://discord.com/api/users/@me/guilds', 'users/@me/guilds');
+      console.log('[oauth] guilds', Array.isArray(guilds) ? guilds.length + ' guilds' : typeof guilds, Array.isArray(guilds) ? guilds.map(g=>g.id).slice(0,5).join(',') : JSON.stringify(guilds).slice(0,300));
+    } catch (e) {
+      console.error('[oauth] user/guild fetch failed:', e.message);
+      return res.redirect('/?error=server_error');
+    }
 
     const inGuild = Array.isArray(guilds) && guilds.some(g => g.id === GUILD_ID);
+    console.log('[oauth] inGuild?', inGuild, 'wanted', GUILD_ID);
     if (!inGuild) {
+      console.log('[oauth] access denied - not in guild');
       return res.status(403).render('error', {
         message: 'Access denied: You must be a member of the rush1095 Discord server.'
       });
     }
     req.session.user = { id: user.id, username: user.global_name || user.username };
-    res.redirect('/');
+    console.log('[oauth] login success', req.session.user);
+    req.session.save(() => res.redirect('/'));
   } catch (err) {
     console.error('[oauth] callback error:', err.message, err.stack?.slice(0,500));
     res.redirect('/?error=server_error');
