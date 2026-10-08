@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Murongs Grand Melee - Server 1095</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-stone-950 text-stone-100">
+<%
+  const errors = {
+    no_code: 'Discord login was cancelled. Try again.',
+    token_failed: 'Discord login failed. Try again.',
+    server_error: 'Something went wrong on our side. Try again in a moment.',
+    invalid_input: 'Enter an in-game name and a valid Power number.'
+  };
+%>
+<header class="border-b border-stone-800">
+  <div class="mx-auto flex max-w-4xl items-center justify-between px-4 py-4">
+    <h1 class="text-lg font-semibold">Murongs Grand Melee <span class="text-stone-400 font-normal">Server 1095</span></h1>
+    <% if (user) { %>
+      <div class="flex items-center gap-4 text-sm">
+        <span class="text-stone-300"><%= user.username %></span>
+        <a href="/logout" class="text-stone-400 underline hover:text-stone-200">Log out</a>
+      </div>
+    <% } %>
+  </div>
+</header>
+
+<main class="mx-auto max-w-4xl px-4 py-8">
+  <% if (error) { %>
+    <div class="mb-6 rounded border border-red-900 bg-red-950 px-4 py-3 text-red-200"><%= errors[error] || 'Something went wrong.' %></div>
+  <% } %>
+
+  <% if (!user) { %>
+    <section class="rounded-lg border border-stone-800 bg-stone-900 p-8">
+      <h2 class="text-xl font-semibold mb-2">Log in to see the participant list</h2>
+      <p class="text-stone-300 mb-6">Members of the rush1095 Discord server can register and view who is taking part.</p>
+      <a href="/auth/discord" class="inline-block rounded bg-indigo-500 px-5 py-2.5 font-medium text-white hover:bg-indigo-400">Log in with Discord</a>
+    </section>
+  <% } else { %>
+    <section class="mb-10 rounded-lg border border-stone-800 bg-stone-900 p-6">
+      <h2 class="text-lg font-semibold mb-4"><%= userReg ? 'Update your registration' : 'Register' %></h2>
+      <form method="POST" action="/register" class="grid gap-4 sm:grid-cols-3">
+        <label class="block">
+          <span class="mb-1 block text-sm text-stone-300">In-game name</span>
+          <input name="in_game_name" required maxlength="50" value="<%= userReg ? userReg.in_game_name : '' %>"
+                 class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
+        </label>
+        <label class="block">
+          <span class="mb-1 block text-sm text-stone-300">Power</span>
+          <input name="power" required inputmode="numeric" pattern="[0-9., ]+" placeholder="e.g. 45000000"
+                 value="<%= userReg ? userReg.power : '' %>"
+                 class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
+        </label>
+        <label class="block">
+          <span class="mb-1 block text-sm text-stone-300">Participating</span>
+          <select name="participating" class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
+            <option value="true"  <%= !userReg || userReg.participating ? 'selected' : '' %>>Yes</option>
+            <option value="false" <%= userReg && !userReg.participating ? 'selected' : '' %>>No</option>
+          </select>
+        </label>
+        <div class="sm:col-span-3">
+          <button type="submit" class="rounded bg-amber-500 px-5 py-2 font-medium text-stone-950 hover:bg-amber-400">
+            <%= userReg ? 'Save changes' : 'Register' %>
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <section>
+      <div class="mb-3 flex items-end justify-between">
+        <h2 class="text-lg font-semibold">Participants <span class="text-stone-400 font-normal">(<%= registrations.length %>)</span></h2>
+        <a href="/export" class="text-sm text-amber-400 underline hover:text-amber-300">Export CSV</a>
+      </div>
+      <div class="overflow-x-auto rounded-lg border border-stone-800">
+        <table class="w-full text-left text-sm">
+          <thead class="bg-stone-900 text-stone-400">
+            <tr>
+              <th class="px-4 py-3 font-medium">#</th>
+              <th class="px-4 py-3 font-medium">In-game name</th>
+              <th class="px-4 py-3 font-medium">Discord</th>
+              <th class="px-4 py-3 font-medium text-right">Power</th>
+              <th class="px-4 py-3 font-medium">Participating</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-stone-800">
+            <% if (!registrations.length) { %>
+              <tr><td colspan="5" class="px-4 py-6 text-center text-stone-400">No registrations yet. Be the first to register above.</td></tr>
+            <% } %>
+            <% registrations.forEach((r, i) => { %>
+              <tr class="<%= r.discord_id === user.id ? 'bg-amber-500/10' : '' %>">
+                <td class="px-4 py-3 text-stone-400"><%= i + 1 %></td>
+                <td class="px-4 py-3 font-medium"><%= r.in_game_name %></td>
+                <td class="px-4 py-3 text-stone-300"><%= r.discord_username %></td>
+                <td class="px-4 py-3 text-right tabular-nums"><%= Number(r.power).toLocaleString('en-US') %></td>
+                <td class="px-4 py-3"><%= r.participating ? 'Yes' : 'No' %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  <% } %>
+</main>
+</body>
+</html>
