@@ -120,6 +120,7 @@ async function initDb() {
     }
   } catch (e) { console.error('PK migration', e.message); }
 
+  try { await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_registrations_discord_event ON registrations(discord_id, event_id)`); } catch (e) { console.error('idx unique', e.message); }
   try { await pool.query(`CREATE INDEX IF NOT EXISTS idx_registrations_event_id ON registrations(event_id)`); } catch {}
   try { await pool.query(`CREATE INDEX IF NOT EXISTS idx_mgm_events_created_at ON mgm_events(created_at DESC)`); } catch {}
 }
@@ -401,12 +402,21 @@ app.post('/register', async (req, res) => {
     const power = parseInt(String(req.body.power || '').replace(/[^0-9]/g, ''), 10);
     if (!name || !Number.isFinite(power) || power < 0) return res.redirect(`/event/${eventId}?error=invalid_input`);
     const participating = req.body.participating === 'true';
-    await pool.query(
-      `INSERT INTO registrations (discord_id, discord_username, in_game_name, power, participating, updated_at, event_id)
-       VALUES ($1,$2,$3,$4,$5,CURRENT_TIMESTAMP,$6)
-       ON CONFLICT (discord_id, event_id) DO UPDATE SET discord_username=EXCLUDED.discord_username, in_game_name=EXCLUDED.in_game_name, power=EXCLUDED.power, participating=EXCLUDED.participating, updated_at=CURRENT_TIMESTAMP`,
-      [req.session.user.id, req.session.user.username, name, power, participating, eventId]
-    );
+    try {
+      await pool.query(
+        `INSERT INTO registrations (discord_id, discord_username, in_game_name, power, participating, updated_at, event_id)
+         VALUES ($1,$2,$3,$4,$5,CURRENT_TIMESTAMP,$6)
+         ON CONFLICT (discord_id, event_id) DO UPDATE SET discord_username=EXCLUDED.discord_username, in_game_name=EXCLUDED.in_game_name, power=EXCLUDED.power, participating=EXCLUDED.participating, updated_at=CURRENT_TIMESTAMP`,
+        [req.session.user.id, req.session.user.username, name, power, participating, eventId]
+      );
+    } catch (e) {
+      if (e.code === '42P10' || String(e.message).includes('ON CONFLICT')) {
+        console.warn('[db] /register fallback (no constraint) for', req.session.user.id);
+        const ex = await pool.query('SELECT 1 FROM registrations WHERE discord_id=$1 AND event_id=$2', [req.session.user.id, eventId]);
+        if (ex.rows.length) await pool.query('UPDATE registrations SET discord_username=$1, in_game_name=$2, power=$3, participating=$4, updated_at=CURRENT_TIMESTAMP WHERE discord_id=$5 AND event_id=$6', [req.session.user.username, name, power, participating, req.session.user.id, eventId]);
+        else await pool.query('INSERT INTO registrations (discord_id, discord_username, in_game_name, power, participating, updated_at, event_id) VALUES ($1,$2,$3,$4,$5,CURRENT_TIMESTAMP,$6)', [req.session.user.id, req.session.user.username, name, power, participating, eventId]);
+      } else throw e;
+    }
     try { const bot = require('./bot'); if (bot.updateEventChannel) { const c = bot.getClient && bot.getClient(); if (c) await bot.updateEventChannel(c, pool); } } catch {}
     res.redirect(`/event/${eventId}`);
   } catch (e) { console.error(e); res.redirect('/?error=server_error'); }
