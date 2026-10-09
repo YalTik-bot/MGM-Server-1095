@@ -29,10 +29,7 @@ function buildListEmbed(registrations, guildName, eventRow, opts = {}) {
   const trunc = (s, max = 1024) => s.length > max ? s.slice(0, max - 20).replace(/\n[^\n]*$/, '') + '\n_and more on dashboard_' : s;
   const totalPower = registrations.reduce((a, r) => a + Number(r.power || 0), 0);
   const goingPower = going.reduce((a, r) => a + Number(r.power || 0), 0);
-  const line = r => {
-    const discord = r.discord_username && r.discord_username !== r.in_game_name ? ` · _${r.discord_username}_` : '';
-    return `**${r.in_game_name}**${discord} — \`${fmtPower(r.power)}\``;
-  };
+  const line = r => `**${r.in_game_name}** — \`${fmtPower(r.power)}\``;
   const goingText = going.length ? going.map(line).join('\n') : '_Nobody yet — tap **Register / Edit**_';
   const notGoingText = notGoing.length ? notGoing.map(line).join('\n') : '_Nobody_';
   const ev = eventRow ? formatEventLine(eventRow.event_at) : null;
