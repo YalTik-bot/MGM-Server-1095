@@ -16,40 +16,54 @@ function buildListEmbed(registrations, guildName, eventRow) {
   const going = registrations.filter(r => r.participating);
   const notGoing = registrations.filter(r => !r.participating);
   const total = registrations.length;
-  const line = r => `**${r.in_game_name}** — ${r.discord_username} — \`${fmtPower(r.power)}\``;
-  const goingText = going.length ? going.map(line).join('\n') : '_Nobody_';
-  const notGoingText = notGoing.length ? notGoing.map(line).join('\n') : '_Nobody_';
   const trunc = (s, max = 1024) => s.length > max ? s.slice(0, max - 20).replace(/\n[^\n]*$/, '') + '\n… and more' : s;
+  const line = r => {
+    const discord = r.discord_username && r.discord_username !== r.in_game_name ? ` · _${r.discord_username}_` : '';
+    return `**${r.in_game_name}**${discord} — \`${fmtPower(r.power)}\``;
+  };
+  const goingText = going.length ? going.map(line).join('\n') : '_Nobody yet — tap **Register / Edit**_';
+  const notGoingText = notGoing.length ? notGoing.map(line).join('\n') : '_Nobody_';
   const ev = eventRow ? formatEventLine(eventRow.event_at) : null;
-  const descEvent = ev
-    ? `📅 **Event:** ${ev.utc}`
-    : `📅 **Event:** _Not set yet — set a date on the dashboard_`;
-  const helpLine = `**How to register:** Type \`/mgm register\` → enter your in-game name, power and \`yes\`/\`no\` — or tap **Register / Edit** below. Then use **I'm Going ✅** / **Not Going ❌** to toggle. \`/mgm status\` shows your entry, \`/mgm list\` refreshes this board.\n**New event:** Anyone can create a fresh board with \`/mgm event when:2026-11-02 19:00 title:Murongs Grand Melee\` (UTC — leave \`when\` empty for TBA). Fresh list, everyone must re-register.`;
+  let descEvent;
+  if (ev) {
+    descEvent = `📅 **Event:** <t:${ev.ts}:F> (<t:${ev.ts}:R>)\n└ _${ev.utc}_`;
+  } else {
+    descEvent = `📅 **Event:** _Not set yet — set a date on the dashboard_`;
+  }
+  const helpShort = `Tap **Register / Edit** or type \`/mgm register\` → name + power + \`yes\`/\`no\` — then toggle **I'm Going ✅** / **Not Going ❌**`;
   const embed = new EmbedBuilder()
     .setTitle(eventRow?.title || 'Murongs Grand Melee — Server 1095')
-    .setDescription(`${descEvent}\nTotal registered: **${total}** — green = going, red = not going\n\n${helpLine}`)
+    .setDescription(`${descEvent}\n**Total:** **${total}** · ✅ ${going.length} going · ❌ ${notGoing.length} not going`)
     .setColor(0xf59e0b)
     .setTimestamp(new Date());
-  if (guildName) embed.setFooter({ text: guildName });
+  if (guildName) embed.setFooter({ text: guildName + ' · updated' });
   embed.addFields(
     { name: `✅ Going — ${going.length}`, value: trunc(goingText), inline: false },
     { name: `❌ Not Going — ${notGoing.length}`, value: trunc(notGoingText), inline: false },
   );
   if (total > 0) {
-    const table = registrations.slice(0, 25).map((r, i) => `${String(i + 1).padStart(2, ' ')}. ${r.in_game_name.padEnd(16).slice(0, 16)}  ${fmtPower(r.power).padStart(10)}  ${r.participating ? '✅' : '❌'}`).join('\n');
-    embed.addFields({ name: '🏆 Top 25 by Power', value: '```\n' + trunc(table, 1000) + '\n```', inline: false });
+    const top = registrations.slice(0, 15).map((r, i) => {
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `**${i + 1}.**`;
+      return `${medal} **${r.in_game_name}** — \`${fmtPower(r.power)}\` ${r.participating ? '✅' : '❌'}`;
+    }).join('\n');
+    const more = total > 15 ? `\n_and ${total - 15} more on dashboard_` : '';
+    embed.addFields({ name: '🏆 Top by Power', value: trunc(top + more, 1024), inline: false });
   }
+  embed.addFields({ name: '📋 How to', value: helpShort + `\n\`/mgm status\` · \`/mgm list\` · new board: \`/mgm event when:2026-11-02 19:00\` (UTC, empty = TBA)`, inline: false });
   return embed;
 }
 
 function buildListComponents() {
+  // Two rows: primary actions together, secondary together — much more tappable on phones
   return [
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('mgm_join').setLabel("I'm Going ✅").setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId('mgm_leave').setLabel('Not Going ❌').setStyle(ButtonStyle.Secondary),
+    ),
+    new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('mgm_register').setLabel('Register / Edit').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('mgm_refresh').setLabel('🔄 Refresh').setStyle(ButtonStyle.Secondary),
-    )
+    ),
   ];
 }
 
