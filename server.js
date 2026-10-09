@@ -295,7 +295,7 @@ app.post('/api/events', requireAuth, async (req, res) => {
         if (c2) {
           const ch2 = await c2.channels.fetch(listId).catch(() => null);
           if (ch2 && ch2.isTextBased()) {
-            await ch2.send({ content: `${allianceMention2} — New MGM event **${title}** — ${createdUtc} — register with \`/mgm register\`!`, allowedMentions: { parse: ['roles', 'everyone', 'users'] } }).catch(() => {});
+            await ch2.send({ content: `${allianceMention2} — New MGM event **${title}** — ${createdUtc} — register with \`/mgm register\`!`, allowedMentions: process.env.ALLIANCE_ROLE_ID ? { roles: [process.env.ALLIANCE_ROLE_ID] } : { parse: [] } }).catch(() => {});
           }
         }
       }
