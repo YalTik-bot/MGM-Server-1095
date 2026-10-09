@@ -79,7 +79,7 @@ async function upsertRegistration(pool, discordId, discordUsername, inGameName, 
        power=EXCLUDED.power,
        participating=EXCLUDED.participating,
        updated_at=CURRENT_TIMESTAMP`,
-    [discordId, discordUsername, inGameName, power, eid]
+    [discordId, discordUsername, inGameName, power, participating, eid]
   );
   return eid;
 }
@@ -243,13 +243,13 @@ async function start(pool) {
             if (LIST_CHANNEL_ID) {
               const ch2 = await client.channels.fetch(LIST_CHANNEL_ID).catch(() => null);
               if (ch2 && ch2.isTextBased()) {
-                await ch2.send({ content: `${allianceMention} — New MGM event **${title}** — ${utcDesc} — register with \`/mgm register\`!`, allowedMentions: { parse: ['roles', 'everyone', 'users'] } }).catch(() => {});
+                await ch2.send({ content: `${allianceMention} — New MGM event **${title}** — ${utcDesc} — register with \`/mgm register\`!`, allowedMentions: process.env.ALLIANCE_ROLE_ID ? { roles: [process.env.ALLIANCE_ROLE_ID] } : { parse: [] } }).catch(() => {});
               }
             }
           } catch {}
           const dashUrl = process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}/event/${newId}` : `/event/${newId}`;
           const chMention = LIST_CHANNEL_ID ? '<#' + LIST_CHANNEL_ID + '>' : 'the MGM channel';
-          return interaction.reply({ content: `${allianceMention} ✅ **New event #${newId}** created: **${title}** — ${utcDesc}.\nParticipants start empty — everyone must re-register with \`/mgm register\`. Dashboard: ${dashUrl} • Board refreshed in ${chMention}.`, allowedMentions: { parse: ['roles', 'everyone', 'users'] } });
+          return interaction.reply({ content: `${allianceMention} ✅ **New event #${newId}** created: **${title}** — ${utcDesc}.\nParticipants start empty — everyone must re-register with \`/mgm register\`. Dashboard: ${dashUrl} • Board refreshed in ${chMention}.`, allowedMentions: process.env.ALLIANCE_ROLE_ID ? { roles: [process.env.ALLIANCE_ROLE_ID] } : { parse: [] } });
         }
 
         // register (default)
