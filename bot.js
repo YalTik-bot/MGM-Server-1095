@@ -108,18 +108,54 @@ async function updateListChannel(client, pool) {
     const embed = buildListEmbed(regs, ch.guild?.name || null, eventRow);
     const components = buildListComponents();
 
-    // Find and update the last bot message in the channel, else send a new one
-    // Look for recent messages by this bot
-    const msgs = await ch.messages.fetch({ limit: 20 }).catch(() => null);
     let target = null;
-    if (msgs) {
-      for (const m of msgs.values()) {
-        if (m.author.id === client.user.id && m.embeds.length && m.embeds[0].title?.includes('Murongs Grand Melee')) { target = m; break; }
+
+    // 1) Prefer pinned board — stays visible via pinned messages even when chat is busy
+    try {
+      const pinned = await ch.messages.fetchPins().catch(() => null);
+      if (pinned && pinned.items) {
+        for (const it of pinned.items) {
+          const m = it.message || it;
+          if (m?.author?.id === client.user.id && m.embeds?.length && m.embeds[0].title?.includes('Murongs Grand Melee')) { target = m; break; }
+        }
+      } else if (pinned && typeof pinned.values === 'function') {
+        for (const m of pinned.values()) {
+          if (m.author.id === client.user.id && m.embeds.length && m.embeds[0].title?.includes('Murongs Grand Melee')) { target = m; break; }
+        }
+      }
+    } catch {}
+
+    // 2) Fallback: recent messages
+    if (!target) {
+      const msgs = await ch.messages.fetch({ limit: 20 }).catch(() => null);
+      if (msgs) {
+        for (const m of msgs.values()) {
+          if (m.author.id === client.user.id && m.embeds.length && m.embeds[0].title?.includes('Murongs Grand Melee')) { target = m; break; }
+        }
       }
     }
-    if (target) await target.edit({ embeds: [embed], components }).catch(async () => { await ch.send({ embeds: [embed], components }); });
-    else await ch.send({ embeds: [embed], components });
-    console.log(`[bot] Updated MGM list in #${ch.name} (${regs.length} regs)`);
+
+    let finalMsg = null;
+    if (target) {
+      try { finalMsg = await target.edit({ embeds: [embed], components }); } catch { finalMsg = await ch.send({ embeds: [embed], components }); }
+    } else {
+      finalMsg = await ch.send({ embeds: [embed], components });
+    }
+
+    // Pin so it stays on top via Pinned messages (needs Manage Messages). Suppress the auto pin system message.
+    if (finalMsg && !finalMsg.pinned) {
+      await finalMsg.pin().catch(e => console.log('[bot] pin failed (need Manage Messages):', e.message));
+      try {
+        const recent = await ch.messages.fetch({ limit: 5 }).catch(() => null);
+        if (recent) {
+          for (const m of recent.values()) {
+            if (m.type === 6) { await m.delete().catch(() => {}); break; }
+          }
+        }
+      } catch {}
+    }
+
+    console.log(`[bot] Updated MGM list in #${ch.name} (${regs.length} regs)${finalMsg?.pinned ? ' pinned' : ''}`);
   } catch (e) {
     console.error('[bot] updateListChannel failed:', e.message);
   }
