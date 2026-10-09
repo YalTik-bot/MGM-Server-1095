@@ -2,11 +2,24 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1c1917">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="description" content="Murongs Grand Melee — Server 1095. Register, see participants, create events.">
   <title>Murongs Grand Melee - Server 1095</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    *{-webkit-tap-highlight-color:rgba(245,158,11,.28)}
+    html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+    body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
+    .scrollbar-hide{-ms-overflow-style:none;scrollbar-width:none}
+    .scrollbar-hide::-webkit-scrollbar{display:none}
+    @media(max-width:640px){input,select,textarea{font-size:16px !important}}
+  </style>
 </head>
-<body class="min-h-screen bg-stone-950 text-stone-100">
+<body class="min-h-screen bg-stone-950 text-stone-100 antialiased selection:bg-amber-500 selection:text-stone-950">
 <%
   const errors = {
     no_code: 'Discord login was cancelled. Try again.',
@@ -31,154 +44,177 @@
     try { const d=new Date(ev.event_at); return d.toLocaleString('en-GB',{timeZone:'UTC',dateStyle:'medium',timeStyle:'short'})+' UTC'; } catch { return 'TBA'; }
   }
 %>
-<header class="border-b border-stone-800">
-  <div class="mx-auto flex max-w-4xl items-center justify-between px-4 py-4">
-    <h1 class="text-lg font-semibold">Murongs Grand Melee <span class="text-stone-400 font-normal">Server 1095</span></h1>
+<header class="sticky top-0 z-40 border-b border-stone-800 bg-stone-950/85 backdrop-blur supports-[backdrop-filter]:bg-stone-950/70" style="padding-top:env(safe-area-inset-top)">
+  <div class="mx-auto flex max-w-4xl items-center justify-between gap-3 px-3 py-3 sm:px-4 sm:py-4">
+    <a href="/" class="flex min-w-0 items-center gap-2">
+      <span class="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500 text-sm font-black text-stone-950 sm:flex">M</span>
+      <h1 class="truncate text-[15px] font-semibold leading-tight sm:text-lg">Murongs Grand Melee <span class="hidden font-normal text-stone-400 sm:inline">Server 1095</span><span class="font-normal text-stone-500 sm:hidden">·1095</span></h1>
+    </a>
     <% if (user) { %>
-      <div class="flex items-center gap-4 text-sm">
-        <span class="text-stone-300"><%= user.username %></span>
-        <a href="/logout" class="text-stone-400 underline hover:text-stone-200">Log out</a>
+      <div class="flex shrink-0 items-center gap-2 sm:gap-3">
+        <span class="max-w-[110px] truncate text-xs text-stone-300 sm:max-w-none sm:text-sm" title="<%= user.username %>"><%= user.username %></span>
+        <a href="/logout" class="shrink-0 rounded-full border border-stone-700 bg-stone-900 px-3 py-1.5 text-xs font-medium text-stone-300 active:bg-stone-800 sm:px-3.5 sm:py-1.5 sm:text-sm hover:border-stone-600">Log out</a>
       </div>
+    <% } else { %>
+      <a href="/auth/discord" class="shrink-0 rounded-full bg-indigo-500 px-4 py-2 text-xs font-semibold text-white active:bg-indigo-400 sm:px-4 sm:py-2 sm:text-sm">Log in</a>
     <% } %>
   </div>
 </header>
 
-<main class="mx-auto max-w-4xl px-4 py-8">
+<main class="mx-auto max-w-4xl px-3 py-4 sm:px-4 sm:py-8" style="padding-bottom:calc(1rem + env(safe-area-inset-bottom))">
   <% if (error) { %>
-    <div class="mb-6 rounded border border-red-900 bg-red-950 px-4 py-3 text-red-200"><%= errors[error] || 'Something went wrong.' %></div>
+    <div class="mb-4 rounded-xl border border-red-900 bg-red-950 px-4 py-3 text-sm text-red-200"><%= errors[error] || 'Something went wrong.' %></div>
   <% } %>
   <% if (typeof dbError !== 'undefined' && dbError) { %>
-    <div class="mb-6 rounded border border-amber-900 bg-amber-950 px-4 py-3 text-amber-200">⚠️ <%= dbError %></div>
+    <div class="mb-4 rounded-xl border border-amber-900 bg-amber-950 px-4 py-3 text-sm text-amber-200">⚠️ <%= dbError %></div>
   <% } %>
 
   <!-- Current event banner -->
-  <section class="mb-4 rounded-lg border <%= _evDisplay ? 'border-amber-800 bg-amber-950/40' : 'border-stone-800 bg-stone-900' %> p-5">
-    <div class="flex items-start justify-between gap-4">
-      <div>
-        <h2 class="text-sm font-semibold tracking-wide text-stone-400 uppercase">Current event <span class="normal-case font-normal text-stone-500">#<%= _curId || '—' %></span></h2>
-        <p class="mt-1 text-lg font-semibold"><%= _ev ? (_ev.title || 'Murongs Grand Melee') : 'Murongs Grand Melee' %></p>
+  <section class="mb-3 rounded-xl border <%= _evDisplay ? 'border-amber-800 bg-amber-950/40' : 'border-stone-800 bg-stone-900' %> p-4 sm:p-5">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+      <div class="min-w-0">
+        <h2 class="text-[11px] font-semibold uppercase tracking-widest text-stone-400">Current event <span class="font-normal normal-case text-stone-500">#<%= _curId || '—' %></span></h2>
+        <p class="mt-1 truncate text-base font-semibold sm:text-lg"><%= _ev ? (_ev.title || 'Murongs Grand Melee') : 'Murongs Grand Melee' %></p>
         <% if (_evDisplay) { %>
-          <p class="mt-1 text-stone-200">📅 <span class="font-medium"><%= _evDisplay.utcStr %></span> <span class="text-stone-400 text-sm">— <span id="eventCountdown" class="text-amber-300"></span></span></p>
+          <p class="mt-1 text-sm text-stone-200">📅 <span class="font-medium"><%= _evDisplay.utcStr %></span> <span class="block text-xs text-stone-400 sm:inline sm:text-sm">— <span id="eventCountdown" class="font-medium text-amber-300"></span></span></p>
         <% } else { %>
-          <p class="mt-1 text-stone-400">No date set yet — set one below or create a new event.</p>
+          <p class="mt-1 text-sm text-stone-400">No date set yet — set one below or create a new event.</p>
         <% } %>
-        <p class="mt-2 text-xs text-stone-500">Dashboard: <code class="rounded bg-stone-900 px-1 py-0.5">/event/<%= _curId %></code> — share this link for this event.</p>
+        <p class="mt-2 truncate text-[11px] text-stone-500">Dashboard: <code class="rounded bg-stone-900 px-1 py-0.5 text-[11px]">/event/<%= _curId %></code></p>
       </div>
       <% if (user) { %>
-        <div class="flex shrink-0 gap-2">
-          <button id="btnEditEvent" class="rounded border border-stone-700 bg-stone-800 px-3 py-1.5 text-sm hover:bg-stone-700">Edit</button>
-          <button id="btnNewEvent" class="rounded bg-amber-500 px-3 py-1.5 text-sm font-medium text-stone-950 hover:bg-amber-400">+ New event</button>
+        <div class="flex gap-2 sm:shrink-0">
+          <button id="btnEditEvent" class="flex-1 rounded-xl border border-stone-700 bg-stone-800 px-4 py-3 text-sm font-medium active:bg-stone-700 sm:flex-none sm:px-3 sm:py-2 hover:bg-stone-700">Edit</button>
+          <button id="btnNewEvent" class="flex-1 rounded-xl bg-amber-500 px-4 py-3 text-sm font-bold text-stone-950 active:bg-amber-400 sm:flex-none sm:px-3 sm:py-2 hover:bg-amber-400">+ New event</button>
         </div>
       <% } %>
     </div>
   </section>
 
   <% if (_all && _all.length > 1) { %>
-    <section class="mb-6 flex flex-wrap items-center gap-2 text-sm">
-      <span class="text-stone-500">All events:</span>
+    <section class="scrollbar-hide -mx-3 mb-4 flex items-center gap-2 overflow-x-auto px-3 pb-1 sm:mx-0 sm:px-0">
+      <span class="shrink-0 text-xs text-stone-500">All events:</span>
       <% _all.forEach(ev => { %>
-        <a href="/event/<%= ev.id %>" class="rounded-full border px-3 py-1 <%= ev.id === _curId ? 'border-amber-500 bg-amber-500 text-stone-950 font-medium' : 'border-stone-700 bg-stone-900 text-stone-300 hover:border-stone-600' %>">
-          #<%= ev.id %> <%= (ev.title || 'MGM').slice(0,22) %> · <%= fmtEvDate(ev) %>
+        <a href="/event/<%= ev.id %>" class="shrink-0 whitespace-nowrap rounded-full border px-3 py-2 text-xs font-medium active:scale-[0.98] sm:py-1.5 sm:text-sm <%= ev.id === _curId ? 'border-amber-500 bg-amber-500 text-stone-950' : 'border-stone-700 bg-stone-900 text-stone-300' %>">
+          #<%= ev.id %> <%= (ev.title || 'MGM').slice(0,18) %> · <%= fmtEvDate(ev).split(' UTC')[0] %>
         </a>
       <% }) %>
-      <a href="/" class="text-stone-500 underline hover:text-stone-300">Latest →</a>
+      <a href="/" class="shrink-0 whitespace-nowrap text-xs text-stone-500 underline underline-offset-2 sm:text-sm">Latest →</a>
     </section>
   <% } %>
 
   <% if (!user) { %>
-    <section class="rounded-lg border border-stone-800 bg-stone-900 p-8">
-      <h2 class="text-xl font-semibold mb-2">How to register</h2>
-      <ol class="list-decimal list-inside space-y-2 text-stone-300 mb-6">
-        <li>Log in with Discord (you must be a member of the rush1095 server).</li>
-        <li>Fill in your <span class="text-stone-100 font-medium">in-game name</span> and <span class="text-stone-100 font-medium">power</span> — choose <span class="text-stone-100">Yes</span> if you are going, <span class="text-stone-100">No</span> if not.</li>
-        <li>Click <span class="text-stone-100 font-medium">Register</span>. You can edit anytime. In Discord, type <code class="rounded bg-stone-800 px-1.5 py-0.5 text-amber-300">/mgm register</code> or use the buttons in the MGM channel.</li>
+    <section class="rounded-xl border border-stone-800 bg-stone-900 p-5 sm:p-8">
+      <h2 class="mb-2 text-lg font-semibold">How to register</h2>
+      <ol class="mb-5 list-inside list-decimal space-y-2 text-[15px] leading-relaxed text-stone-300 sm:mb-6">
+        <li>Log in with Discord <span class="text-sm text-stone-500">(rush1095 member only)</span>.</li>
+        <li>Fill in <span class="font-medium text-stone-100">in-game name</span> + <span class="font-medium text-stone-100">power</span> — pick <span class="font-medium text-emerald-400">Yes</span> or <span class="font-medium text-red-400">No</span>.</li>
+        <li>Tap <span class="font-medium text-stone-100">Register</span>. Edit anytime. In Discord use <code class="rounded bg-stone-800 px-1.5 py-0.5 text-sm text-amber-300">/mgm register</code>.</li>
       </ol>
-      <p class="text-sm text-stone-400 mb-6">Your entry appears instantly on the dashboard and in the Discord channel list (<code class="rounded bg-stone-800 px-1 py-0.5">/mgm list</code> to refresh).</p>
-      <a href="/auth/discord" class="inline-block rounded bg-indigo-500 px-5 py-2.5 font-medium text-white hover:bg-indigo-400">Log in with Discord</a>
+      <p class="mb-6 text-sm text-stone-400">Appears instantly on dashboard + Discord board (<code class="rounded bg-stone-800 px-1 py-0.5 text-xs">/mgm list</code> to refresh).</p>
+      <a href="/auth/discord" class="flex w-full items-center justify-center rounded-xl bg-indigo-500 px-5 py-4 text-[15px] font-semibold text-white active:bg-indigo-400 sm:inline-flex sm:w-auto sm:py-3 hover:bg-indigo-400">Log in with Discord</a>
+      <p class="mt-3 text-center text-xs text-stone-500 sm:text-left">Works in Discord's built-in browser.</p>
     </section>
   <% } else { %>
 
     <!-- New event creator -->
-    <section id="newEventBox" class="mb-6 hidden rounded-lg border border-amber-800 bg-amber-950/30 p-6">
-      <h3 class="text-sm font-semibold tracking-wide text-amber-300 uppercase mb-1">Create a new MGM event</h3>
-      <p class="text-sm text-stone-300 mb-4">Starts a fresh dashboard with an empty participant list — everyone must re-register. Everyone can create a new event.</p>
-      <div class="grid gap-4 sm:grid-cols-2">
+    <section id="newEventBox" class="mb-4 hidden rounded-xl border border-amber-800 bg-amber-950/30 p-4 sm:p-6">
+      <h3 class="mb-1 text-xs font-bold uppercase tracking-widest text-amber-300">Create a new MGM event</h3>
+      <p class="mb-4 text-sm leading-relaxed text-stone-300">Fresh dashboard, empty list — everyone must re-register.</p>
+      <div class="grid gap-3 sm:grid-cols-2 sm:gap-4">
         <label class="block">
-          <span class="mb-1 block text-sm text-stone-300">Title</span>
-          <input id="new_title" type="text" maxlength="100" value="Murongs Grand Melee" class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
+          <span class="mb-1.5 block text-sm font-medium text-stone-300">Title</span>
+          <input id="new_title" type="text" maxlength="100" value="Murongs Grand Melee" autocomplete="off" class="w-full rounded-xl border border-stone-700 bg-stone-950 px-3 py-3.5 text-[16px] sm:py-2.5 sm:text-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500">
         </label>
         <label class="block">
-          <span class="mb-1 block text-sm text-stone-300">Date & time (UTC) — leave empty for TBA</span>
-          <input id="new_datetime" type="datetime-local" class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
+          <span class="mb-1.5 block text-sm font-medium text-stone-300">Date & time <span class="font-normal text-stone-500">UTC · empty = TBA</span></span>
+          <input id="new_datetime" type="datetime-local" class="w-full rounded-xl border border-stone-700 bg-stone-950 px-3 py-3.5 text-[16px] sm:py-2.5 sm:text-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500">
         </label>
       </div>
-      <div class="mt-4 flex flex-wrap items-center gap-3">
-        <button id="btnCreateEvent" class="rounded bg-amber-500 px-5 py-2 font-medium text-stone-950 hover:bg-amber-400">Create new event</button>
-        <span id="newMsg" class="text-sm text-stone-400"></span>
+      <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <button id="btnCreateEvent" class="w-full rounded-xl bg-amber-500 px-5 py-4 text-[15px] font-bold text-stone-950 active:bg-amber-400 sm:w-auto sm:py-3 hover:bg-amber-400">Create new event</button>
+        <span id="newMsg" class="text-center text-sm text-stone-400 sm:text-left"></span>
       </div>
-      <div class="mt-4 rounded bg-stone-900 p-3 text-xs text-stone-400">
-        <p class="font-semibold text-stone-300 mb-1">Or in Discord (anyone):</p>
-        <code class="block rounded bg-stone-950 px-2 py-1.5 text-amber-300">/mgm event when:2026-11-02 19:00 title:Murongs Grand Melee</code>
-        <p class="mt-1">Creates the same new dashboard — e.g. <code class="text-stone-300">/mgm event when:2026-11-02 19:00</code> for 19:00 UTC. Leave <code>when</code> empty for TBA. The MGM channel board always shows the latest event.</p>
+      <div class="mt-4 rounded-xl bg-stone-900 p-3 text-xs leading-relaxed text-stone-400">
+        <p class="mb-1 font-semibold text-stone-300">Or in Discord (anyone):</p>
+        <code class="scrollbar-hide block overflow-x-auto rounded-lg bg-stone-950 px-2.5 py-2 text-amber-300">/mgm event when:2026-11-02 19:00 title:Murongs Grand Melee</code>
+        <p class="mt-2">E.g. <code class="text-stone-300">/mgm event when:2026-11-02 19:00</code> for 19:00 UTC. MGM board always shows latest event.</p>
       </div>
     </section>
 
     <!-- Edit current event -->
-    <section id="eventEditor" class="mb-6 hidden rounded-lg border border-stone-800 bg-stone-900 p-6">
-      <h3 class="text-sm font-semibold tracking-wide text-stone-400 uppercase mb-4">Edit this event (#<%= _curId %>)</h3>
-      <div class="grid gap-4 sm:grid-cols-2">
+    <section id="eventEditor" class="mb-4 hidden rounded-xl border border-stone-800 bg-stone-900 p-4 sm:p-6">
+      <h3 class="mb-3 text-xs font-bold uppercase tracking-widest text-stone-400">Edit this event (#<%= _curId %>)</h3>
+      <div class="grid gap-3 sm:grid-cols-2 sm:gap-4">
         <label class="block">
-          <span class="mb-1 block text-sm text-stone-300">Title</span>
-          <input id="ev_title" type="text" maxlength="100" value="<%= _ev ? (_ev.title || '') : 'Murongs Grand Melee' %>" class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
+          <span class="mb-1.5 block text-sm font-medium text-stone-300">Title</span>
+          <input id="ev_title" type="text" maxlength="100" value="<%= _ev ? (_ev.title || '') : 'Murongs Grand Melee' %>" autocomplete="off" class="w-full rounded-xl border border-stone-700 bg-stone-950 px-3 py-3.5 text-[16px] sm:py-2.5 sm:text-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500">
         </label>
         <label class="block">
-          <span class="mb-1 block text-sm text-stone-300">Date & time (UTC)</span>
-          <input id="ev_datetime" type="datetime-local" class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
+          <span class="mb-1.5 block text-sm font-medium text-stone-300">Date & time <span class="font-normal text-stone-500">UTC</span></span>
+          <input id="ev_datetime" type="datetime-local" class="w-full rounded-xl border border-stone-700 bg-stone-950 px-3 py-3.5 text-[16px] sm:py-2.5 sm:text-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500">
         </label>
       </div>
-      <p class="mt-2 text-xs text-stone-500">Leave the date empty to clear it (shows as TBA). Time is in UTC. Saves instantly to dashboard + Discord.</p>
-      <div class="mt-4 flex gap-3">
-        <button id="btnSaveEvent" class="rounded bg-amber-500 px-5 py-2 font-medium text-stone-950 hover:bg-amber-400">Save</button>
-        <button id="btnClearEvent" class="rounded border border-stone-700 bg-stone-800 px-4 py-2 text-sm hover:bg-stone-700">Clear date</button>
-        <span id="evMsg" class="self-center text-sm text-stone-400"></span>
+      <p class="mt-2 text-xs leading-relaxed text-stone-500">Empty = TBA. Time is UTC. Saves to dashboard + Discord.</p>
+      <div class="mt-4 flex flex-col gap-2 sm:flex-row">
+        <button id="btnSaveEvent" class="w-full rounded-xl bg-amber-500 px-5 py-4 text-[15px] font-bold text-stone-950 active:bg-amber-400 sm:w-auto sm:py-3 hover:bg-amber-400">Save</button>
+        <button id="btnClearEvent" class="w-full rounded-xl border border-stone-700 bg-stone-800 px-4 py-3.5 text-sm font-medium active:bg-stone-700 sm:w-auto sm:py-3 hover:bg-stone-700">Clear date</button>
+        <span id="evMsg" class="py-2 text-center text-sm text-stone-400 sm:self-center sm:text-left"></span>
       </div>
     </section>
 
-    <section class="mb-2 rounded-lg border border-stone-800 bg-stone-900/60 p-4">
-      <p class="text-sm text-stone-300"><span class="font-semibold text-stone-100">How to register:</span> Enter your in-game name + power and pick <span class="text-emerald-400">Yes (Going)</span> or <span class="text-red-400">No</span>. In Discord, type <code class="rounded bg-stone-800 px-1.5 py-0.5 text-amber-300">/mgm register</code> or tap <span class="font-medium">Register / Edit</span> in the MGM channel — then toggle with <span class="font-medium">I'm Going ✅</span> / <span class="font-medium">Not Going ❌</span>.</p>
-      <p class="mt-2 text-xs text-stone-500">New event? Everyone must re-register — the list starts empty. In Discord everyone can run <code class="rounded bg-stone-800 px-1 py-0.5 text-amber-300">/mgm event when:YYYY-MM-DD HH:MM</code> to create the next dashboard.</p>
+    <section class="mb-3 rounded-xl border border-stone-800 bg-stone-900/60 p-3.5 sm:p-4">
+      <p class="text-[13px] leading-relaxed text-stone-300 sm:text-sm"><span class="font-semibold text-stone-100">How to register:</span> Name + power → <span class="font-medium text-emerald-400">Yes</span> / <span class="font-medium text-red-400">No</span>. In Discord <code class="rounded bg-stone-800 px-1 py-0.5 text-xs text-amber-300 sm:text-sm">/mgm register</code> or tap <span class="font-medium">Register / Edit</span> → toggle <span class="font-medium">I'm Going ✅</span> / <span class="font-medium">Not Going ❌</span>.</p>
+      <p class="mt-2 text-xs leading-relaxed text-stone-500">New event? Re-register — list starts empty. In Discord: <code class="rounded bg-stone-800 px-1 py-0.5 text-xs text-amber-300">/mgm event when:YYYY-MM-DD HH:MM</code></p>
     </section>
-    <section class="mb-10 rounded-lg border border-stone-800 bg-stone-900 p-6">
-      <h2 class="text-lg font-semibold mb-4"><%= userReg ? 'Update your registration' : 'Register' %> <span class="text-sm font-normal text-stone-500">for #<%= _curId %> · <%= _ev ? (_ev.title || 'MGM') : 'MGM' %></span></h2>
-      <form method="POST" action="/register" class="grid gap-4 sm:grid-cols-3">
+    <section class="mb-6 rounded-xl border border-stone-800 bg-stone-900 p-4 sm:p-6">
+      <h2 class="text-[15px] font-semibold sm:text-lg"><%= userReg ? 'Update your registration' : 'Register' %> <span class="block text-xs font-normal text-stone-500 sm:inline sm:text-sm">for #<%= _curId %> · <%= _ev ? (_ev.title || 'MGM') : 'MGM' %></span></h2>
+      <form method="POST" action="/register" class="mt-4 grid gap-3 sm:grid-cols-3 sm:gap-4">
         <input type="hidden" name="event_id" value="<%= _curId %>">
         <label class="block">
-          <span class="mb-1 block text-sm text-stone-300">In-game name</span>
-          <input name="in_game_name" required maxlength="50" value="<%= userReg ? userReg.in_game_name : '' %>" class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
+          <span class="mb-1.5 block text-sm font-medium text-stone-300">In-game name</span>
+          <input name="in_game_name" required maxlength="50" autocomplete="nickname" value="<%= userReg ? userReg.in_game_name : '' %>" placeholder="YalTik" class="w-full rounded-xl border border-stone-700 bg-stone-950 px-3 py-3.5 text-[16px] placeholder:text-stone-600 sm:py-2.5 sm:text-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500">
         </label>
         <label class="block">
-          <span class="mb-1 block text-sm text-stone-300">Power</span>
-          <input name="power" required inputmode="numeric" pattern="[0-9., ]+" placeholder="e.g. 45000000" value="<%= userReg ? userReg.power : '' %>" class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
+          <span class="mb-1.5 block text-sm font-medium text-stone-300">Power</span>
+          <input name="power" required inputmode="numeric" pattern="[0-9., ]+" placeholder="45000000" value="<%= userReg ? userReg.power : '' %>" class="w-full rounded-xl border border-stone-700 bg-stone-950 px-3 py-3.5 text-[16px] placeholder:text-stone-600 sm:py-2.5 sm:text-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500">
         </label>
         <label class="block">
-          <span class="mb-1 block text-sm text-stone-300">Participating</span>
-          <select name="participating" class="w-full rounded border border-stone-700 bg-stone-950 px-3 py-2 focus:border-amber-500 focus:outline-none">
-            <option value="true"  <%= !userReg || userReg.participating ? 'selected' : '' %>>Yes</option>
-            <option value="false" <%= userReg && !userReg.participating ? 'selected' : '' %>>No</option>
+          <span class="mb-1.5 block text-sm font-medium text-stone-300">Participating</span>
+          <select name="participating" class="w-full rounded-xl border border-stone-700 bg-stone-950 px-3 py-3.5 text-[16px] sm:py-2.5 sm:text-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500">
+            <option value="true"  <%= !userReg || userReg.participating ? 'selected' : '' %>>Yes — Going ✅</option>
+            <option value="false" <%= userReg && !userReg.participating ? 'selected' : '' %>>No — Not going ❌</option>
           </select>
         </label>
         <div class="sm:col-span-3">
-          <button type="submit" class="rounded bg-amber-500 px-5 py-2 font-medium text-stone-950 hover:bg-amber-400"><%= userReg ? 'Save changes' : 'Register' %></button>
+          <button type="submit" class="w-full rounded-xl bg-amber-500 px-5 py-4 text-[15px] font-bold text-stone-950 active:bg-amber-400 sm:w-auto sm:py-3 hover:bg-amber-400"><%= userReg ? 'Save changes' : 'Register' %></button>
         </div>
       </form>
     </section>
 
     <section>
-      <div class="mb-3 flex items-end justify-between">
-        <h2 class="text-lg font-semibold">Participants <span class="text-stone-400 font-normal">(<%= registrations.length %>)</span></h2>
-        <a href="/export?event_id=<%= _curId %>" class="text-sm text-amber-400 underline hover:text-amber-300">Export CSV</a>
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <h2 class="text-[15px] font-semibold sm:text-lg">Participants <span class="font-normal text-stone-400">(<%= registrations.length %>)</span></h2>
+        <a href="/export?event_id=<%= _curId %>" class="shrink-0 rounded-full border border-stone-700 bg-stone-900 px-3 py-2 text-xs font-medium text-amber-400 active:bg-stone-800 sm:px-3 sm:py-1.5 sm:text-sm hover:text-amber-300">Export CSV</a>
       </div>
-      <div class="overflow-x-auto rounded-lg border border-stone-800">
+      <!-- Mobile: cards | Desktop: table -->
+      <div class="grid gap-2 sm:hidden">
+        <% if (!registrations.length) { %>
+          <div class="rounded-xl border border-dashed border-stone-800 bg-stone-900/40 px-4 py-8 text-center text-sm text-stone-400">No registrations yet for this event.<br>Be the first — or create a new event above.</div>
+        <% } %>
+        <% registrations.forEach((r, i) => { %>
+          <div class="flex items-center gap-3 rounded-xl border <%= r.discord_id === user.id ? 'border-amber-800 bg-amber-950/30' : 'border-stone-800 bg-stone-900' %> px-3 py-3">
+            <span class="w-6 shrink-0 text-center text-xs font-medium text-stone-500"><%= i + 1 %></span>
+            <div class="min-w-0 flex-1">
+              <p class="truncate text-[15px] font-semibold leading-tight"><%= r.in_game_name %></p>
+              <p class="truncate text-xs text-stone-400"><%= r.discord_username %> · <span class="tabular-nums text-stone-300"><%= Number(r.power).toLocaleString('en-US') %></span></p>
+            </div>
+            <span class="shrink-0 rounded-full border px-2.5 py-1 text-xs font-bold <%= r.participating ? 'border-emerald-800 bg-emerald-950 text-emerald-300' : 'border-stone-700 bg-stone-800 text-stone-400' %>"><%= r.participating ? 'Yes' : 'No' %></span>
+          </div>
+        <% }) %>
+      </div>
+      <div class="hidden overflow-hidden rounded-xl border border-stone-800 sm:block">
+        <div class="overflow-x-auto">
         <table class="w-full text-left text-sm">
           <thead class="bg-stone-900 text-stone-400">
             <tr>
@@ -199,23 +235,24 @@
                 <td class="px-4 py-3 font-medium"><%= r.in_game_name %></td>
                 <td class="px-4 py-3 text-stone-300"><%= r.discord_username %></td>
                 <td class="px-4 py-3 text-right tabular-nums"><%= Number(r.power).toLocaleString('en-US') %></td>
-                <td class="px-4 py-3"><%= r.participating ? 'Yes' : 'No' %></td>
+                <td class="px-4 py-3"><span class="<%= r.participating ? 'text-emerald-400' : 'text-stone-400' %>"><%= r.participating ? 'Yes' : 'No' %></span></td>
               </tr>
             <% }) %>
           </tbody>
         </table>
+        </div>
       </div>
     </section>
 
     <% if (_all && _all.length > 1) { %>
-      <section class="mt-8 rounded-lg border border-stone-800 bg-stone-900 p-4">
-        <h3 class="text-sm font-semibold text-stone-400 mb-2">Past events</h3>
+      <section class="mt-6 rounded-xl border border-stone-800 bg-stone-900 p-4">
+        <h3 class="mb-2 text-xs font-bold uppercase tracking-widest text-stone-400">Past events</h3>
         <div class="space-y-1 text-sm">
           <% _all.filter(ev=>ev.id!==_curId).forEach(ev=>{ %>
-            <div class="flex justify-between py-1 border-b border-stone-800 last:border-0">
-              <a href="/event/<%= ev.id %>" class="text-amber-400 hover:underline">#<%= ev.id %> — <%= ev.title %></a>
-              <span class="text-stone-500"><%= fmtEvDate(ev) %></span>
-            </div>
+            <a href="/event/<%= ev.id %>" class="-mx-2 flex items-center justify-between gap-3 rounded-lg px-2 py-2.5 active:bg-stone-800 sm:py-1">
+              <span class="truncate font-medium text-amber-400">#<%= ev.id %> — <%= ev.title %></span>
+              <span class="shrink-0 text-xs text-stone-500"><%= fmtEvDate(ev).split(' UTC')[0] %></span>
+            </a>
           <% }) %>
         </div>
       </section>
@@ -254,14 +291,14 @@
     btnEdit.addEventListener('click', () => {
       if(newBox) newBox.classList.add('hidden');
       ed.classList.toggle('hidden');
-      if(!ed.classList.contains('hidden') && el) el.focus();
+      if(!ed.classList.contains('hidden')){ ed.scrollIntoView({behavior:'smooth',block:'nearest'}); if(el) el.focus(); }
     });
   }
   if(btnNew && newBox){
     btnNew.addEventListener('click', () => {
       if(ed) ed.classList.add('hidden');
       newBox.classList.toggle('hidden');
-      if(!newBox.classList.contains('hidden') && newTitleEl) newTitleEl.focus();
+      if(!newBox.classList.contains('hidden')){ newBox.scrollIntoView({behavior:'smooth',block:'nearest'}); if(newTitleEl) newTitleEl.focus(); }
     });
   }
 
