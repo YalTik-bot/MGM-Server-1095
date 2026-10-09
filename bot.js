@@ -55,15 +55,6 @@ function buildListEmbed(registrations, guildName, eventRow, opts = {}) {
   footerParts.push(`updated ${hh} UTC`);
   embed.setFooter({ text: footerParts.join(' · ') });
 
-  // Optional: viewer-specific status (when triggered by a user action, not the global refresh)
-  if (opts.viewerId) {
-    const me = registrations.find(r => r.discord_id === opts.viewerId);
-    if (me) {
-      const rank = [...registrations].sort((a, b) => Number(b.power) - Number(a.power)).findIndex(r => r.discord_id === opts.viewerId) + 1;
-      embed.addFields({ name: `👤 You`, value: `**${me.in_game_name}** — \`${fmtPower(me.power)}\` ${me.participating ? '✅ Going' : '❌ Not Going'}${rank ? ` · rank #${rank}` : ''}`, inline: false });
-    }
-  }
-
   embed.addFields(
     { name: `✅ Going — ${going.length}${going.length ? ` · ${fmtPower(goingPower)}` : ''}`, value: trunc(goingText), inline: false },
     { name: `❌ Not Going — ${notGoing.length}`, value: trunc(notGoingText), inline: false },
