@@ -139,17 +139,30 @@ async function upsertRegistration(pool, discordId, discordUsername, inGameName, 
   let eid = eventId;
   if (!eid) eid = await getCurrentEventId(pool);
   if (!eid) throw new Error('No event');
-  await pool.query(
-    `INSERT INTO registrations (discord_id, discord_username, in_game_name, power, participating, updated_at, event_id)
-     VALUES ($1,$2,$3,$4,$5,CURRENT_TIMESTAMP,$6)
-     ON CONFLICT (discord_id, event_id) DO UPDATE SET
-       discord_username=EXCLUDED.discord_username,
-       in_game_name=EXCLUDED.in_game_name,
-       power=EXCLUDED.power,
-       participating=EXCLUDED.participating,
-       updated_at=CURRENT_TIMESTAMP`,
-    [discordId, discordUsername, inGameName, power, participating, eid]
-  );
+  try {
+    await pool.query(
+      `INSERT INTO registrations (discord_id, discord_username, in_game_name, power, participating, updated_at, event_id)
+       VALUES ($1,$2,$3,$4,$5,CURRENT_TIMESTAMP,$6)
+       ON CONFLICT (discord_id, event_id) DO UPDATE SET
+         discord_username=EXCLUDED.discord_username,
+         in_game_name=EXCLUDED.in_game_name,
+         power=EXCLUDED.power,
+         participating=EXCLUDED.participating,
+         updated_at=CURRENT_TIMESTAMP`,
+      [discordId, discordUsername, inGameName, power, participating, eid]
+    );
+  } catch (e) {
+    // 42P10 = no unique constraint matching ON CONFLICT — DB still on old schema (e.g. after Railway restore)
+    if (e.code === '42P10' || String(e.message).includes('ON CONFLICT')) {
+      console.warn('[db] upsert fallback (no constraint) for', discordId);
+      const ex = await pool.query('SELECT 1 FROM registrations WHERE discord_id=$1 AND event_id=$2', [discordId, eid]);
+      if (ex.rows.length) {
+        await pool.query('UPDATE registrations SET discord_username=$1, in_game_name=$2, power=$3, participating=$4, updated_at=CURRENT_TIMESTAMP WHERE discord_id=$5 AND event_id=$6', [discordUsername, inGameName, power, participating, discordId, eid]);
+      } else {
+        await pool.query('INSERT INTO registrations (discord_id, discord_username, in_game_name, power, participating, updated_at, event_id) VALUES ($1,$2,$3,$4,$5,CURRENT_TIMESTAMP,$6)', [discordId, discordUsername, inGameName, power, participating, eid]);
+      }
+    } else throw e;
+  }
   return eid;
 }
 
