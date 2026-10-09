@@ -1,5 +1,6 @@
 const express = require('express');
 const session = require('express-session');
+let MemoryStoreCtor; try{ MemoryStoreCtor=require('memorystore')(session);}catch{MemoryStoreCtor=null;}
 const { Pool } = require('pg');
 const path = require('path');
 require('dotenv').config();
@@ -141,10 +142,17 @@ async function listEvents() {
 app.set('trust proxy', 1);
 app.set('view engine', 'ejs');
 app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
+app.use(express.json({ limit: '100kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+// Security headers (lightweight)
+app.use((req,res,next)=>{ res.setHeader('X-Content-Type-Options','nosniff'); res.setHeader('X-Frame-Options','DENY'); res.setHeader('Referrer-Policy','strict-origin-when-cross-origin'); next(); });
+// Rate limiter 60 req/min per IP for /api
+const __rl=new Map(); app.use('/api/',(req,res,next)=>{ const k=req.ip; const now=Date.now(); const e=__rl.get(k)||{c:0,t:now}; if(now-e.t>60000){e.c=0;e.t=now;} e.c++; __rl.set(k,e); if(e.c>60) return res.status(429).json({error:'Too many requests'}); next(); });
+const __sessSecret = process.env.SESSION_SECRET;
+if (!__sessSecret || __sessSecret.length < 32) { console.error('FATAL: SESSION_SECRET must be at least 32 chars (set a long random string in Railway variables)'); process.exit(1); }
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'fallback-secret',
+  store: MemoryStoreCtor? new MemoryStoreCtor({checkPeriod:86400000}): undefined,
+  secret: __sessSecret,
   resave: false,
   saveUninitialized: false,
   cookie: { secure: process.env.NODE_ENV === 'production', httpOnly: true, sameSite: 'lax', maxAge: 7 * 24 * 3600 * 1000 }
@@ -435,4 +443,6 @@ app.get('/auth/debug', async (req, res) => {
 if (!CLIENT_ID || !CLIENT_SECRET || !REDIRECT_URI || !GUILD_ID) console.error('[startup] Missing env:', { hasId: !!CLIENT_ID, hasSecret: !!CLIENT_SECRET, redirectUri: REDIRECT_URI, guildId: GUILD_ID });
 else console.log('[startup] OAuth configured: client', CLIENT_ID, 'redirect', REDIRECT_URI, 'guild', GUILD_ID);
 
+process.on('unhandledRejection',e=>console.error('[unhandledRejection]',e));
+process.on('uncaughtException',e=>console.error('[uncaughtException]',e));
 app.listen(PORT, () => console.log(`MGM running on ${PORT}`));
