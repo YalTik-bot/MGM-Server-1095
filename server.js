@@ -333,7 +333,7 @@ app.put('/api/event/:id', requireAuth, async (req, res) => {
     const newDate = hasDate ? eventAt : ev.event_at;
     const { rows } = await pool.query(`UPDATE mgm_events SET title=$1, event_at=$2, updated_by=$3, updated_at=CURRENT_TIMESTAMP WHERE id=$4 RETURNING *`, [newTitle, newDate, req.session.user.id, id]);
     console.log(`[event] updated ${id} by ${req.session.user.id} -> ${newDate} "${newTitle}"`);
-    try { const bot = require('./bot'); if (bot.updateEventChannel) { const c = bot.getClient && bot.getClient(); if (c) await bot.updateEventChannel(c, pool); } } catch {}
+    try { const bot = require('./bot'); const c = bot.getClient && bot.getClient(); const fn = bot.updateListChannel || bot.updateEventChannel; if (c && fn) await fn(c, pool); } catch {}
     res.json(rows[0]);
   } catch (e) { console.error('[event] update failed', e.message); res.status(500).json({ error: 'Database error' }); }
 });
@@ -417,9 +417,31 @@ app.post('/register', async (req, res) => {
         else await pool.query('INSERT INTO registrations (discord_id, discord_username, in_game_name, power, participating, updated_at, event_id) VALUES ($1,$2,$3,$4,$5,CURRENT_TIMESTAMP,$6)', [req.session.user.id, req.session.user.username, name, power, participating, eventId]);
       } else throw e;
     }
-    try { const bot = require('./bot'); if (bot.updateEventChannel) { const c = bot.getClient && bot.getClient(); if (c) await bot.updateEventChannel(c, pool); } } catch {}
+    try { const bot = require('./bot'); const c = bot.getClient && bot.getClient(); const fn = bot.updateListChannel || bot.updateEventChannel; if (c && fn) await fn(c, pool); } catch {}
     res.redirect(`/event/${eventId}`);
   } catch (e) { console.error(e); res.redirect('/?error=server_error'); }
+});
+
+// Withdraw own registration for an event
+app.post('/withdraw', async (req, res) => {
+  if (!req.session.user) return res.redirect('/auth/discord');
+  try {
+    const eventId = parseInt(req.body.event_id, 10) || (await getCurrentEvent())?.id;
+    if (!eventId) return res.redirect('/?error=server_error');
+    const del = await pool.query('DELETE FROM registrations WHERE discord_id=$1 AND event_id=$2 RETURNING in_game_name', [req.session.user.id, eventId]);
+    if (!del.rows.length) return res.redirect(`/event/${eventId}?error=server_error`);
+    console.log(`[withdraw] ${req.session.user.id} withdrew from event ${eventId}`);
+    try { const bot = require('./bot'); const c = bot.getClient && bot.getClient(); const fn = bot.updateListChannel || bot.updateEventChannel; if (c && fn) await fn(c, pool); } catch {}
+    res.redirect(`/event/${eventId}`);
+  } catch (e) { console.error(e); res.redirect('/?error=server_error'); }
+});
+app.post('/api/withdraw', requireAuth, async (req, res) => {
+  const eventId = parseInt(req.body.event_id, 10) || (await getCurrentEvent())?.id;
+  if (!eventId) return res.status(400).json({ error: 'No event' });
+  const del = await pool.query('DELETE FROM registrations WHERE discord_id=$1 AND event_id=$2 RETURNING in_game_name', [req.session.user.id, eventId]);
+  if (!del.rows.length) return res.status(404).json({ error: 'Not registered' });
+  try { const bot = require('./bot'); if (bot.updateEventChannel) { const c = bot.getClient && bot.getClient(); if (c) await bot.updateEventChannel(c, pool); } } catch {}
+  res.json({ ok: true, removed: del.rows[0].in_game_name });
 });
 
 // Keep old POST /register without event_id working (redirects to current)
