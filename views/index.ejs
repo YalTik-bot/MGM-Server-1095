@@ -186,8 +186,12 @@
             <option value="false" <%= userReg && !userReg.participating ? 'selected' : '' %>>No — Not going ❌</option>
           </select>
         </label>
-        <div class="sm:col-span-3">
+        <div class="sm:col-span-3 flex flex-col gap-2 sm:flex-row">
           <button type="submit" class="w-full rounded-xl bg-amber-500 px-5 py-4 text-[15px] font-bold text-stone-950 active:bg-amber-400 sm:w-auto sm:py-3 hover:bg-amber-400"><%= userReg ? 'Save changes' : 'Register' %></button>
+          <% if (userReg) { %>
+            <button type="button" id="btnWithdraw" class="w-full rounded-xl border border-red-900 bg-red-950 px-5 py-3.5 text-sm font-semibold text-red-200 active:bg-red-900 sm:w-auto hover:bg-red-900">Withdraw</button>
+            <span id="withdrawMsg" class="py-2 text-center text-sm text-stone-400 sm:self-center sm:text-left"></span>
+          <% } %>
         </div>
       </form>
     </section>
@@ -354,6 +358,23 @@
     }
   }
   if(btnCreate) btnCreate.addEventListener('click', createEvent);
+
+  const btnWithdraw = document.getElementById('btnWithdraw');
+  const withdrawMsg = document.getElementById('withdrawMsg');
+  if(btnWithdraw){
+    btnWithdraw.addEventListener('click', async () => {
+      if(!confirm('Remove your registration for this event?')) return;
+      withdrawMsg.textContent = 'Withdrawing…';
+      btnWithdraw.disabled = true;
+      try{
+        const r = await fetch('/api/withdraw', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event_id: curId }) });
+        const j = await r.json().catch(()=>({}));
+        if(!r.ok) throw new Error(j.error || 'Withdraw failed');
+        withdrawMsg.textContent = 'Removed — reloading…';
+        location.reload();
+      }catch(e){ withdrawMsg.textContent = e.message || 'Failed'; btnWithdraw.disabled = false; }
+    });
+  }
 
   if(countdownEl && iso){
     function tick(){

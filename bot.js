@@ -99,6 +99,7 @@ function buildListComponents(eventRow, total, page) {
     ),
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('mgm_register').setLabel('Register / Edit').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('mgm_withdraw').setLabel('Withdraw').setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId('mgm_refresh').setLabel('🔄 Refresh').setStyle(ButtonStyle.Secondary),
     ),
   ];
@@ -254,6 +255,7 @@ function buildMgmCommand() {
     .addSubcommand(sc => sc.setName('list').setDescription('Show who is going and who is not (posts in MGM channel)'))
     .addSubcommand(sc => sc.setName('status').setDescription('Show your own registration'))
     .addSubcommand(sc => sc.setName('event').setDescription('Create a new MGM event (fresh participant list)').addStringOption(o => o.setName('when').setDescription('Date & time UTC, e.g. 2026-10-20 19:00 or empty for TBA').setRequired(false)).addStringOption(o => o.setName('title').setDescription('Event title').setRequired(false)))
+    .addSubcommand(sc => sc.setName('withdraw').setDescription('Remove your registration for the current event'))
     .toJSON();
 }
 
@@ -339,6 +341,17 @@ async function start(pool) {
           const ev = await getEventRow(pool, eid);
           const evLabel = ev ? ` for **${ev.title}**` : '';
           return interaction.reply({ content: `**${row.in_game_name}** — Power \`${fmtPower(row.power)}\` — ${row.participating ? '✅ Going' : '❌ Not Going'}${evLabel}`, ephemeral: true });
+        }
+
+        if (sub === 'withdraw') {
+          const eid = await getCurrentEventId(pool);
+          if (!eid) return interaction.reply({ content: 'No active event.', ephemeral: true });
+          const row = (await pool.query('SELECT * FROM registrations WHERE discord_id=$1 AND event_id=$2', [interaction.user.id, eid])).rows[0];
+          if (!row) return interaction.reply({ content: 'You are not registered for the current event.', ephemeral: true });
+          await pool.query('DELETE FROM registrations WHERE discord_id=$1 AND event_id=$2', [interaction.user.id, eid]);
+          console.log(`[bot] withdraw ${interaction.user.id} ${row.in_game_name} from event ${eid}`);
+          await updateListChannel(client, pool);
+          return interaction.reply({ content: `🗑️ Removed **${row.in_game_name}** from the event. Use \`/mgm register\` to sign up again.`, ephemeral: true });
         }
 
         if (sub === 'list') {
@@ -433,6 +446,41 @@ async function start(pool) {
           const guildIconURL = interaction.guild?.iconURL?.({ extension: 'png', size: 128 }) || null;
           const embed = buildListEmbed(regs, interaction.guild?.name || null, eventRow, { viewerId: interaction.user.id, guildIconURL, page: clamped });
           return interaction.update({ embeds: [embed], components: buildListComponents(eventRow, regs.length, clamped) });
+        }
+        if (id === 'mgm_withdraw') {
+          const eid = await getCurrentEventId(pool);
+          if (!eid) return interaction.reply({ content: 'No active event.', ephemeral: true });
+          const row = (await pool.query('SELECT * FROM registrations WHERE discord_id=$1 AND event_id=$2', [interaction.user.id, eid])).rows[0];
+          if (!row) return interaction.reply({ content: 'You are not registered for the current event.', ephemeral: true });
+          // Confirm with secondary ephemeral? Require second click — use a confirm row
+          if (!id.endsWith(':confirm')) {
+            const confirmRow = new ActionRowBuilder().addComponents(
+              new ButtonBuilder().setCustomId('mgm_withdraw:confirm').setLabel('Confirm withdraw').setStyle(ButtonStyle.Danger),
+              new ButtonBuilder().setCustomId('mgm_withdraw_cancel').setLabel('Cancel').setStyle(ButtonStyle.Secondary),
+            );
+            return interaction.reply({ content: `Remove **${row.in_game_name}** from this event?`, components: [confirmRow], ephemeral: true });
+          }
+        }
+        if (id === 'mgm_withdraw:confirm') {
+          const eid = await getCurrentEventId(pool);
+          if (!eid) return interaction.reply({ content: 'No active event.', ephemeral: true });
+          const row = (await pool.query('SELECT * FROM registrations WHERE discord_id=$1 AND event_id=$2', [interaction.user.id, eid])).rows[0];
+          if (!row) return interaction.update({ content: 'You are not registered.', components: [] }).catch(() => interaction.reply({ content: 'You are not registered.', ephemeral: true }));
+          await pool.query('DELETE FROM registrations WHERE discord_id=$1 AND event_id=$2', [interaction.user.id, eid]);
+          console.log(`[bot] withdraw (button confirm) ${interaction.user.id} ${row.in_game_name} from event ${eid}`);
+          await updateListChannel(client, pool);
+          try {
+            const regs = await fetchRegistrations(pool);
+            const eventRow = await getEventRow(pool);
+            const guildIconURL = interaction.guild?.iconURL?.({ extension: 'png', size: 128 }) || null;
+            const embed = buildListEmbed(regs, interaction.guild?.name || null, eventRow, { viewerId: interaction.user.id, guildIconURL, page: 0 });
+            if (interaction.message?.embeds?.length) await interaction.update({ content: `🗑️ Removed **${row.in_game_name}**.`, embeds: [embed], components: buildListComponents(eventRow, regs.length, 0) });
+            else await interaction.update({ content: `🗑️ Removed **${row.in_game_name}**. Use \`/mgm register\` to sign up again.`, components: [] });
+          } catch { await interaction.reply({ content: `🗑️ Removed **${row.in_game_name}**.`, ephemeral: true }).catch(() => {}); }
+          return;
+        }
+        if (id === 'mgm_withdraw_cancel') {
+          return interaction.update({ content: 'Cancelled.', components: [] }).catch(() => interaction.reply({ content: 'Cancelled.', ephemeral: true }));
         }
         if (id === 'mgm_refresh') {
           const regs = await fetchRegistrations(pool);
