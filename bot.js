@@ -12,11 +12,24 @@ const LIST_CHANNEL_ID = process.env.MGM_CHANNEL_ID || process.env.MGM_LIST_CHANN
 
 function fmtPower(n) { return Number(n).toLocaleString('en-US'); }
 
-function buildListEmbed(registrations, guildName, eventRow) {
+function getBoardUrl(eventRow) {
+  const id = eventRow?.id;
+  if (!id) return null;
+  if (process.env.RAILWAY_PUBLIC_DOMAIN) return `https://${process.env.RAILWAY_PUBLIC_DOMAIN}/event/${id}`;
+  if (process.env.DISCORD_REDIRECT_URI) { try { return new URL(process.env.DISCORD_REDIRECT_URI).origin + `/event/${id}`; } catch {} }
+  return null;
+}
+
+function buildListEmbed(registrations, guildName, eventRow, opts = {}) {
+  const page = Math.max(0, opts.page | 0);
+  const pageSize = 15;
   const going = registrations.filter(r => r.participating);
   const notGoing = registrations.filter(r => !r.participating);
   const total = registrations.length;
-  const trunc = (s, max = 1024) => s.length > max ? s.slice(0, max - 20).replace(/\n[^\n]*$/, '') + '\n… and more' : s;
+  const trunc = (s, max = 1024) => s.length > max ? s.slice(0, max - 20).replace(/\n[^\n]*$/, '') + '\n_and more on dashboard_' : s;
+  const totalPower = registrations.reduce((a, r) => a + Number(r.power || 0), 0);
+  const avgPower = total ? Math.round(totalPower / total) : 0;
+  const goingPower = going.reduce((a, r) => a + Number(r.power || 0), 0);
   const line = r => {
     const discord = r.discord_username && r.discord_username !== r.in_game_name ? ` · _${r.discord_username}_` : '';
     return `**${r.in_game_name}**${discord} — \`${fmtPower(r.power)}\``;
@@ -25,37 +38,62 @@ function buildListEmbed(registrations, guildName, eventRow) {
   const notGoingText = notGoing.length ? notGoing.map(line).join('\n') : '_Nobody_';
   const ev = eventRow ? formatEventLine(eventRow.event_at) : null;
   let descEvent;
-  if (ev) {
-    descEvent = `📅 **Event:** ${ev.utc}`;
-  } else {
-    descEvent = `📅 **Event:** _Not set yet — set a date on the dashboard_`;
-  }
+  if (ev) descEvent = `📅 **Event:** ${ev.utc}`;
+  else descEvent = `📅 **Event:** _Not set yet — set a date on the dashboard_`;
+  const statsLine = total
+    ? `**Total:** **${total}** · ✅ ${going.length} going · ❌ ${notGoing.length} not going · ⚡ ${fmtPower(totalPower)} total (avg ${fmtPower(avgPower)})`
+    : `**Total:** **0** · no registrations yet`;
   const helpShort = `Tap **Register / Edit** or type \`/mgm register\` → name + power + \`yes\`/\`no\` — then toggle **I'm Going ✅** / **Not Going ❌**`;
+  const boardUrl = opts.boardUrl || getBoardUrl(eventRow);
   const embed = new EmbedBuilder()
     .setTitle(eventRow?.title || 'Murongs Grand Melee — Server 1095')
-    .setDescription(`${descEvent}\n**Total:** **${total}** · ✅ ${going.length} going · ❌ ${notGoing.length} not going`)
+    .setDescription(`${descEvent}\n${statsLine}`)
     .setColor(0xf59e0b)
     .setTimestamp(new Date());
-  if (guildName) embed.setFooter({ text: guildName + ' · updated' });
+  if (boardUrl) embed.setURL(boardUrl);
+  if (opts.guildIconURL) embed.setThumbnail(opts.guildIconURL);
+  const footerParts = [];
+  if (guildName) footerParts.push(guildName);
+  if (eventRow?.id) footerParts.push(`Event #${eventRow.id}`);
+  const hh = new Date().toLocaleTimeString('en-GB', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' });
+  footerParts.push(`updated ${hh} UTC`);
+  embed.setFooter({ text: footerParts.join(' · ') });
+
+  // Optional: viewer-specific status (when triggered by a user action, not the global refresh)
+  if (opts.viewerId) {
+    const me = registrations.find(r => r.discord_id === opts.viewerId);
+    if (me) {
+      const rank = [...registrations].sort((a, b) => Number(b.power) - Number(a.power)).findIndex(r => r.discord_id === opts.viewerId) + 1;
+      embed.addFields({ name: `👤 You`, value: `**${me.in_game_name}** — \`${fmtPower(me.power)}\` ${me.participating ? '✅ Going' : '❌ Not Going'}${rank ? ` · rank #${rank}` : ''}`, inline: false });
+    }
+  }
+
   embed.addFields(
-    { name: `✅ Going — ${going.length}`, value: trunc(goingText), inline: false },
+    { name: `✅ Going — ${going.length}${going.length ? ` · ${fmtPower(goingPower)}` : ''}`, value: trunc(goingText), inline: false },
     { name: `❌ Not Going — ${notGoing.length}`, value: trunc(notGoingText), inline: false },
   );
   if (total > 0) {
-    const top = registrations.slice(0, 15).map((r, i) => {
-      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `**${i + 1}.**`;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const cur = Math.min(page, totalPages - 1);
+    const slice = registrations.slice(cur * pageSize, cur * pageSize + pageSize);
+    const top = slice.map((r, i) => {
+      const abs = cur * pageSize + i;
+      const medal = abs === 0 ? '🥇' : abs === 1 ? '🥈' : abs === 2 ? '🥉' : `**${abs + 1}.**`;
       return `${medal} **${r.in_game_name}** — \`${fmtPower(r.power)}\` ${r.participating ? '✅' : '❌'}`;
     }).join('\n');
-    const more = total > 15 ? `\n_and ${total - 15} more on dashboard_` : '';
-    embed.addFields({ name: '🏆 Top by Power', value: trunc(top + more, 1024), inline: false });
+    const label = totalPages > 1 ? `🏆 Top by Power — page ${cur + 1}/${totalPages}` : `🏆 Top by Power`;
+    const more = totalPages > 1 ? `\n_page ${cur + 1} of ${totalPages} · full list on dashboard_` : (total > pageSize ? `\n_and ${total - pageSize} more on dashboard_` : '');
+    embed.addFields({ name: label, value: trunc(top + more, 1024), inline: false });
   }
-  embed.addFields({ name: '📋 How to', value: helpShort + `\n\`/mgm status\` · \`/mgm list\` · new board: \`/mgm event when:2026-11-02 19:00\` (UTC, empty = TBA)`, inline: false });
+  const howVal = total > 50
+    ? helpShort + `\n\`/mgm status\` · prev/next top list below · full export on dashboard`
+    : helpShort + `\n\`/mgm status\` · \`/mgm list\` · new board: \`/mgm event when:2026-11-02 19:00\` (UTC, empty = TBA)`;
+  embed.addFields({ name: '📋 How to', value: howVal, inline: false });
   return embed;
 }
 
-function buildListComponents() {
-  // Two rows: primary actions together, secondary together — much more tappable on phones
-  return [
+function buildListComponents(eventRow, total, page) {
+  const rows = [
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('mgm_join').setLabel("I'm Going ✅").setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId('mgm_leave').setLabel('Not Going ❌').setStyle(ButtonStyle.Secondary),
@@ -65,6 +103,23 @@ function buildListComponents() {
       new ButtonBuilder().setCustomId('mgm_refresh').setLabel('🔄 Refresh').setStyle(ButtonStyle.Secondary),
     ),
   ];
+  const boardUrl = getBoardUrl(eventRow);
+  if (boardUrl) {
+    rows.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setLabel('🔗 Open Dashboard').setStyle(ButtonStyle.Link).setURL(boardUrl),
+    ));
+  }
+  if (typeof total === 'number' && total > 15) {
+    const pageSize = 15;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const cur = Math.max(0, Math.min(page | 0, totalPages - 1));
+    rows.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`mgm_top_prev:${cur}`).setLabel('◀ Prev').setStyle(ButtonStyle.Secondary).setDisabled(cur <= 0),
+      new ButtonBuilder().setCustomId(`mgm_top_next:${cur}`).setLabel('Next ▶').setStyle(ButtonStyle.Secondary).setDisabled(cur >= totalPages - 1),
+    ));
+  }
+  // Discord limits 5 rows — cap if both dashboard + pagination present we have 4 rows max, safe
+  return rows.slice(0, 5);
 }
 
 async function getCurrentEventId(pool) {
@@ -98,15 +153,17 @@ async function upsertRegistration(pool, discordId, discordUsername, inGameName, 
   return eid;
 }
 
-async function updateListChannel(client, pool) {
+async function updateListChannel(client, pool, opts = {}) {
   if (!LIST_CHANNEL_ID) return;
   try {
     const ch = await client.channels.fetch(LIST_CHANNEL_ID).catch(() => null);
     if (!ch || !ch.isTextBased()) { console.log('[bot] MGM list channel not found:', LIST_CHANNEL_ID); return; }
     const regs = await fetchRegistrations(pool);
     const eventRow = await getEventRow(pool);
-    const embed = buildListEmbed(regs, ch.guild?.name || null, eventRow);
-    const components = buildListComponents();
+    const page = Math.max(0, opts.page | 0);
+    const guildIconURL = ch.guild?.iconURL?.({ extension: 'png', size: 128 }) || null;
+    const embed = buildListEmbed(regs, ch.guild?.name || null, eventRow, { page, guildIconURL });
+    const components = buildListComponents(eventRow, regs.length, page);
 
     let target = null;
 
@@ -140,6 +197,7 @@ async function updateListChannel(client, pool) {
       try { finalMsg = await target.edit({ embeds: [embed], components }); } catch { finalMsg = await ch.send({ embeds: [embed], components }); }
     } else {
       finalMsg = await ch.send({ embeds: [embed], components });
+      if (!finalMsg) console.log('[bot] updateListChannel self-heal: board was deleted, recreated');
     }
 
     // Pin so it stays on top via Pinned messages (needs Manage Messages). Suppress the auto pin system message.
@@ -155,7 +213,22 @@ async function updateListChannel(client, pool) {
       } catch {}
     }
 
-    console.log(`[bot] Updated MGM list in #${ch.name} (${regs.length} regs)${finalMsg?.pinned ? ' pinned' : ''}`);
+    // Housekeeping: unpin stale MGM boards when a new event started (keep only current board pinned)
+    if (finalMsg?.pinned && opts.unpinOld) {
+      try {
+        const pinned2 = await ch.messages.fetchPins().catch(() => null);
+        const items = pinned2?.items || (pinned2 && typeof pinned2.values === 'function' ? [...pinned2.values()].map(m => ({ message: m })) : []);
+        for (const it of (items || [])) {
+          const m = it.message || it;
+          if (m.id !== finalMsg.id && m.author?.id === client.user.id && m.embeds?.[0]?.title?.includes('Murongs Grand Melee')) {
+            await m.unpin().catch(() => {});
+            console.log('[bot] unpinned stale board', m.id);
+          }
+        }
+      } catch {}
+    }
+
+    console.log(`[bot] Updated MGM list in #${ch.name} (${regs.length} regs)${finalMsg?.pinned ? ' pinned' : ''} page ${page}`);
   } catch (e) {
     console.error('[bot] updateListChannel failed:', e.message);
   }
@@ -257,10 +330,11 @@ async function start(pool) {
         }
 
         if (sub === 'list') {
+          const guildIconURL = interaction.guild?.iconURL?.({ extension: 'png', size: 128 }) || null;
           const regs = await fetchRegistrations(pool);
           const eventRow = await getEventRow(pool);
-          const embed = buildListEmbed(regs, guildName, eventRow);
-          const components = buildListComponents();
+          const embed = buildListEmbed(regs, guildName, eventRow, { viewerId: interaction.user.id, guildIconURL });
+          const components = buildListComponents(eventRow, regs.length, 0);
           // If LIST_CHANNEL_ID set, post there and confirm ephemerally
           if (LIST_CHANNEL_ID) {
             await updateListChannel(client, pool);
@@ -286,7 +360,7 @@ async function start(pool) {
           const { rows } = await pool.query('INSERT INTO mgm_events (title, event_at, created_by, updated_by) VALUES ($1,$2,$3,$3) RETURNING *', [title, eventAt, interaction.user.id]);
           const newId = rows[0].id;
           const utcDesc = eventAt ? new Date(eventAt).toLocaleString('en-GB', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' }) + ' UTC' : 'TBA';
-          await updateListChannel(client, pool);
+          await updateListChannel(client, pool, { unpinOld: true });
           // Ping Alliance members in the MGM channel (uses @Alliance members; if you have a role ID put it in ALLIANCE_ROLE_ID for a real ping)
           const allianceMention = process.env.ALLIANCE_ROLE_ID ? `<@&${process.env.ALLIANCE_ROLE_ID}>` : '@Alliance members';
           try {
@@ -335,11 +409,25 @@ async function start(pool) {
         if (id === 'mgm_register') {
           return interaction.showModal(buildRegisterModal());
         }
+        if (id.startsWith('mgm_top_')) {
+          const cur = parseInt(id.split(':')[1] || '0', 10) | 0;
+          const isNext = id.startsWith('mgm_top_next');
+          const nextPage = isNext ? cur + 1 : cur - 1;
+          const regs = await fetchRegistrations(pool);
+          const eventRow = await getEventRow(pool);
+          const page = Math.max(0, nextPage);
+          const totalPages = Math.max(1, Math.ceil(regs.length / 15));
+          const clamped = Math.min(page, totalPages - 1);
+          const guildIconURL = interaction.guild?.iconURL?.({ extension: 'png', size: 128 }) || null;
+          const embed = buildListEmbed(regs, interaction.guild?.name || null, eventRow, { viewerId: interaction.user.id, guildIconURL, page: clamped });
+          return interaction.update({ embeds: [embed], components: buildListComponents(eventRow, regs.length, clamped) });
+        }
         if (id === 'mgm_refresh') {
           const regs = await fetchRegistrations(pool);
           const eventRow = await getEventRow(pool);
-          const embed = buildListEmbed(regs, interaction.guild?.name || null, eventRow);
-          return interaction.update({ embeds: [embed], components: buildListComponents() });
+          const guildIconURL = interaction.guild?.iconURL?.({ extension: 'png', size: 128 }) || null;
+          const embed = buildListEmbed(regs, interaction.guild?.name || null, eventRow, { viewerId: interaction.user.id, guildIconURL, page: 0 });
+          return interaction.update({ embeds: [embed], components: buildListComponents(eventRow, regs.length, 0) });
         }
         if (id === 'mgm_join' || id === 'mgm_leave') {
           const want = id === 'mgm_join';
@@ -355,8 +443,10 @@ async function start(pool) {
           // Update the message in place if it's the list embed, else ephemeral confirm
           try {
             const regs = await fetchRegistrations(pool);
-            const embed = buildListEmbed(regs, interaction.guild?.name || null, await getEventRow(pool));
-            if (interaction.message?.embeds?.length) await interaction.update({ embeds: [embed], components: buildListComponents() });
+            const evRow2 = await getEventRow(pool);
+            const guildIconURL2 = interaction.guild?.iconURL?.({ extension: 'png', size: 128 }) || null;
+            const embed = buildListEmbed(regs, interaction.guild?.name || null, evRow2, { viewerId: interaction.user.id, guildIconURL: guildIconURL2, page: 0 });
+            if (interaction.message?.embeds?.length) await interaction.update({ embeds: [embed], components: buildListComponents(evRow2, regs.length, 0) });
             else await interaction.reply({ content: want ? '✅ You are now marked as **Going**.' : '❌ You are now marked as **Not Going**.', ephemeral: true });
           } catch {
             await interaction.reply({ content: want ? '✅ Going.' : '❌ Not Going.', ephemeral: true }).catch(() => {});
@@ -375,4 +465,4 @@ async function start(pool) {
   return client;
 }
 
-module.exports = { start, buildListEmbed, updateListChannel, updateEventChannel, getClient, getEventRow };
+module.exports = { start, buildListEmbed, buildListComponents, getBoardUrl, updateListChannel, updateEventChannel, getClient, getEventRow };
