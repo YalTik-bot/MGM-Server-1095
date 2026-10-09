@@ -28,7 +28,6 @@ function buildListEmbed(registrations, guildName, eventRow, opts = {}) {
   const total = registrations.length;
   const trunc = (s, max = 1024) => s.length > max ? s.slice(0, max - 20).replace(/\n[^\n]*$/, '') + '\n_and more on dashboard_' : s;
   const totalPower = registrations.reduce((a, r) => a + Number(r.power || 0), 0);
-  const avgPower = total ? Math.round(totalPower / total) : 0;
   const goingPower = going.reduce((a, r) => a + Number(r.power || 0), 0);
   const line = r => {
     const discord = r.discord_username && r.discord_username !== r.in_game_name ? ` · _${r.discord_username}_` : '';
@@ -41,7 +40,7 @@ function buildListEmbed(registrations, guildName, eventRow, opts = {}) {
   if (ev) descEvent = `📅 **Event:** ${ev.utc}`;
   else descEvent = `📅 **Event:** _Not set yet — set a date on the dashboard_`;
   const statsLine = total
-    ? `**Total:** **${total}** · ✅ ${going.length} going · ❌ ${notGoing.length} not going · ⚡ ${fmtPower(totalPower)} total (avg ${fmtPower(avgPower)})`
+    ? `**Total:** **${total}** · ✅ ${going.length} going · ❌ ${notGoing.length} not going · ⚡ ${fmtPower(totalPower)} total`
     : `**Total:** **0** · no registrations yet`;
   const helpShort = `Tap **Register / Edit** or type \`/mgm register\` → name + power + \`yes\`/\`no\` — then toggle **I'm Going ✅** / **Not Going ❌**`;
   const boardUrl = opts.boardUrl || getBoardUrl(eventRow);
