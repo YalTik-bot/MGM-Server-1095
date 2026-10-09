@@ -26,7 +26,7 @@ function buildListEmbed(registrations, guildName, eventRow) {
   const ev = eventRow ? formatEventLine(eventRow.event_at) : null;
   let descEvent;
   if (ev) {
-    descEvent = `📅 **Event:** <t:${ev.ts}:F> (<t:${ev.ts}:R>)\n└ _${ev.utc}_`;
+    descEvent = `📅 **Event:** ${ev.utc}`;
   } else {
     descEvent = `📅 **Event:** _Not set yet — set a date on the dashboard_`;
   }
